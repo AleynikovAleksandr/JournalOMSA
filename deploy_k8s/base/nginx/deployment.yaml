@@ -32,10 +32,7 @@ spec:
             - >-
               mkdir -p /etc/nginx/certs;
               if [ ! -s /etc/nginx/certs/fullchain.pem ] || [ ! -s /etc/nginx/certs/privkey.pem ]; then
-                openssl req -x509 -nodes -days 1 -newkey rsa:2048
-                  -keyout /etc/nginx/certs/privkey.pem
-                  -out /etc/nginx/certs/fullchain.pem
-                  -subj "/CN=${HTTPS_HOST}";
+                openssl req -x509 -nodes -days 1 -newkey rsa:2048 -keyout /etc/nginx/certs/privkey.pem -out /etc/nginx/certs/fullchain.pem -subj "/CN=${HTTPS_HOST}";
               fi;
               chmod 600 /etc/nginx/certs/privkey.pem;
               chmod 644 /etc/nginx/certs/fullchain.pem
