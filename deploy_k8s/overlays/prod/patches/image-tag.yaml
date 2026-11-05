@@ -1,5 +1,5 @@
 # Тег образов приложения: номер выпуска или хеш коммита.
-# Образы backend, worker и Nginx собираются и загружаются в реестр (README, «Развёртывание»).
+# Образы backend, worker и Nginx должны быть заранее загружены в containerd на узле Kubernetes.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,12 +9,12 @@ spec:
     spec:
       initContainers:
         - name: certificate-bootstrap
-          image: registry.example.local/omsa-ledger/nginx:1.28.0
-          imagePullPolicy: Always
+          image: omsa-ledger-nginx:1.28.0
+          imagePullPolicy: Never
       containers:
         - name: nginx
-          image: registry.example.local/omsa-ledger/nginx:1.28.0
-          imagePullPolicy: Always
+          image: omsa-ledger-nginx:1.28.0
+          imagePullPolicy: Never
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,12 +25,12 @@ spec:
     spec:
       initContainers:
         - name: initial-data
-          image: registry.example.local/omsa-ledger/backend:1.0.0
-          imagePullPolicy: Always
+          image: omsa-ledger-backend:1.0.0
+          imagePullPolicy: Never
       containers:
         - name: web
-          image: registry.example.local/omsa-ledger/backend:1.0.0
-          imagePullPolicy: Always
+          image: omsa-ledger-backend:1.0.0
+          imagePullPolicy: Never
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,8 +41,8 @@ spec:
     spec:
       containers:
         - name: admin
-          image: registry.example.local/omsa-ledger/backend:1.0.0
-          imagePullPolicy: Always
+          image: omsa-ledger-backend:1.0.0
+          imagePullPolicy: Never
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,8 +53,8 @@ spec:
     spec:
       containers:
         - name: worker
-          image: registry.example.local/omsa-ledger/worker:1.0.0
-          imagePullPolicy: Always
+          image: omsa-ledger-worker:1.0.0
+          imagePullPolicy: Never
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -65,5 +65,5 @@ spec:
     spec:
       containers:
         - name: beat
-          image: registry.example.local/omsa-ledger/worker:1.0.0
-          imagePullPolicy: Always
+          image: omsa-ledger-worker:1.0.0
+          imagePullPolicy: Never
