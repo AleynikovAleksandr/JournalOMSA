@@ -23,6 +23,7 @@ dependencies = [
     "psycopg[binary]==3.3.6",
     "redis==8.1.0",
     "celery==5.6.3",
+    "packaging==26.3",
     "pywebpush==2.5.0",
     # Безопасность
     "argon2-cffi==25.1.0",
