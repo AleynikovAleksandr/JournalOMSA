@@ -1,5 +1,5 @@
 # PostgreSQL 18 (документ «Образы Docker», 3.1).
-# Пароль передаётся файлом секрета (POSTGRES_PASSWORD_FILE): kubectl describe pod его не показывает.
+# Пароль передаётся через Secret env (kubectl describe pod его значение не показывает).
 # Том подключается к /var/lib/postgresql, PGDATA не задаётся (pg_upgrade --link при смене версии).
 apiVersion: apps/v1
 kind: Deployment
@@ -20,6 +20,7 @@ spec:
         app: postgres
     spec:
       terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 999
         seccompProfile:
@@ -78,8 +79,11 @@ spec:
                 secretKeyRef:
                   name: omsa-ledger-secrets
                   key: POSTGRES_DB
-            - name: POSTGRES_PASSWORD_FILE
-              value: /run/secrets/postgres_password
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: omsa-ledger-secrets
+                  key: POSTGRES_PASSWORD
           ports:
             - name: postgres
               containerPort: 5432
@@ -112,26 +116,16 @@ spec:
               mountPath: /docker-entrypoint-initdb.d/schema.sql
               subPath: schema.sql
               readOnly: true
-            - name: postgres-password
-              mountPath: /run/secrets
-              readOnly: true
             - name: shm
               mountPath: /dev/shm
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: postgres-data
+          hostPath:
+            path: /home/alex_a/JournalOMSA/service_data/postgres
+            type: DirectoryOrCreate
         - name: initdb
           configMap:
             name: postgres-initdb
-        # Пароль — ключ POSTGRES_PASSWORD Secret omsa-ledger-secrets, подключённый файлом
-        - name: postgres-password
-          secret:
-            secretName: omsa-ledger-secrets
-            defaultMode: 0440
-            items:
-              - key: POSTGRES_PASSWORD
-                path: postgres_password
         # Разделяемая память PostgreSQL (shm_size: 1gb из документа «Образы Docker»)
         - name: shm
           emptyDir:

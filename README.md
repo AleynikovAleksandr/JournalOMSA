@@ -132,14 +132,10 @@ PostgreSQL выполняет файл один раз — при первом �
 2. Указать теги образов в `deploy_k8s/overlays/prod/patches/image-tag.yaml`, настройки приложения —
    в `secret.yaml` (раздел «Секреты»), IP-адрес, ACME e-mail, разрешённые сети админки и параметры
    Gunicorn — в `configmap.yaml`.
-3. Для одноузлового Kubernetes без StorageClass один раз установить локальное хранилище:
-
-   ```bash
-   bash scripts/install_local_path_storage.sh
-   ```
-
-   Данные PVC будут храниться на диске узла в `/opt/local-path-provisioner`. Это локальное хранилище
-   без репликации между узлами; настройте резервное копирование базы отдельно.
+3. На одноузловом Kubernetes постоянные данные, база, Redis, ACME-состояние и логи хранятся
+   прямо в `~/JournalOMSA/service_data` на узле: `postgres/`, `redis/`, `nginx/`, `gunicorn/`, `celery/`.
+   Скопируйте существующие данные в эти каталоги перед переключением манифестов. Настройте резервное
+   копирование каталога отдельно.
 4. Запустить — всё управление кластером идёт через `scripts/deploy_k8s.sh`:
 
    ```bash
@@ -175,7 +171,7 @@ PostgreSQL выполняет файл один раз — при первом �
 `deploy_k8s/overlays/prod/secret.yaml` — Secret `omsa-ledger-secrets` со **всеми** параметрами
 `backend/app/schemas/settings.py` (имя переменной — имя поля в верхнем регистре). Приложение, Celery и
 init-контейнер получают их через `envFrom`; контейнер PostgreSQL берёт оттуда `POSTGRES_USER`,
-`POSTGRES_DB` и пароль — ключ `POSTGRES_PASSWORD`, подключённый файлом `/run/secrets/postgres_password`.
+`POSTGRES_DB` и пароль — ключ `POSTGRES_PASSWORD`, переданный контейнеру PostgreSQL из Secret как переменная окружения.
 Фрагмент:
 
 ```yaml

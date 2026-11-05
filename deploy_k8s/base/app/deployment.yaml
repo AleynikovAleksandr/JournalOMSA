@@ -113,9 +113,11 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
-        # Каталог журналов logs/gunicorn подключается к поду как том
+        # Журналы Gunicorn хранятся рядом с данными приложения на узле.
         - name: gunicorn-logs
-          emptyDir: {}
+          hostPath:
+            path: /home/alex_a/JournalOMSA/service_data/gunicorn
+            type: DirectoryOrCreate
         # worker_tmp_dir Gunicorn — в памяти
         - name: shm
           emptyDir:
@@ -216,7 +218,9 @@ spec:
               mountPath: /tmp
       volumes:
         - name: gunicorn-logs
-          emptyDir: {}
+          hostPath:
+            path: /home/alex_a/JournalOMSA/service_data/gunicorn
+            type: DirectoryOrCreate
         - name: shm
           emptyDir:
             medium: Memory

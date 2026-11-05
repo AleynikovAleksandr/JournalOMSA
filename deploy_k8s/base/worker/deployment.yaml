@@ -78,6 +78,8 @@ spec:
               mountPath: /tmp
       volumes:
         - name: celery-logs
-          emptyDir: {}
+          hostPath:
+            path: /home/alex_a/JournalOMSA/service_data/celery
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}
