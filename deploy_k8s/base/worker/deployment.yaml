@@ -29,6 +29,7 @@ spec:
       containers:
         - name: worker
           image: omsa-ledger/worker:dev
+          imagePullPolicy: Always
           command:
             - celery
             - -A

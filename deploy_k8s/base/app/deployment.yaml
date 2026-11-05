@@ -41,6 +41,7 @@ spec:
         # Справочники и первичный администратор; скрипт идемпотентен
         - name: initial-data
           image: omsa-ledger/backend:dev
+          imagePullPolicy: Always
           command: ["python", "-m", "database.initial_data"]
           envFrom:
             - configMapRef:
@@ -58,6 +59,7 @@ spec:
       containers:
         - name: web
           image: omsa-ledger/backend:dev
+          imagePullPolicy: Always
           command: ["/app/scripts/run_gunicorn.sh"]
           env:
             - name: APP_MODULE
@@ -157,6 +159,7 @@ spec:
       containers:
         - name: admin
           image: omsa-ledger/backend:dev
+          imagePullPolicy: Always
           command: ["/app/scripts/run_gunicorn.sh"]
           env:
             - name: APP_MODULE

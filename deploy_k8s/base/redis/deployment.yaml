@@ -27,6 +27,7 @@ spec:
       containers:
         - name: redis
           image: redis/redis-stack:latest
+          imagePullPolicy: Always
           env:
             - name: REDIS_ARGS
               value: >-

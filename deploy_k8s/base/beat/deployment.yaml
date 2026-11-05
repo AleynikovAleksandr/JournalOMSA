@@ -31,6 +31,7 @@ spec:
       containers:
         - name: beat
           image: omsa-ledger/worker:dev
+          imagePullPolicy: Always
           command:
             - celery
             - -A

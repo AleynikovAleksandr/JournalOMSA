@@ -132,7 +132,15 @@ PostgreSQL выполняет файл один раз — при первом �
 2. Указать теги образов в `deploy_k8s/overlays/prod/patches/image-tag.yaml`, настройки приложения —
    в `secret.yaml` (раздел «Секреты»), IP-адрес, ACME e-mail, разрешённые сети админки и параметры
    Gunicorn — в `configmap.yaml`.
-3. Запустить — всё управление кластером идёт через `scripts/deploy_k8s.sh`:
+3. Для одноузлового Kubernetes без StorageClass один раз установить локальное хранилище:
+
+   ```bash
+   bash scripts/install_local_path_storage.sh
+   ```
+
+   Данные PVC будут храниться на диске узла в `/opt/local-path-provisioner`. Это локальное хранилище
+   без репликации между узлами; настройте резервное копирование базы отдельно.
+4. Запустить — всё управление кластером идёт через `scripts/deploy_k8s.sh`:
 
    ```bash
    scripts/deploy_k8s.sh start                # запустить или обновить всё

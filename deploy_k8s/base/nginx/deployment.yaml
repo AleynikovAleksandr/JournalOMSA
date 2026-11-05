@@ -25,6 +25,7 @@ spec:
       initContainers:
         - name: certificate-bootstrap
           image: registry.example.local/omsa-ledger/nginx:1.28.0
+          imagePullPolicy: Always
           command:
             - /bin/sh
             - -ec
@@ -54,6 +55,7 @@ spec:
       containers:
         - name: nginx
           image: registry.example.local/omsa-ledger/nginx:1.28.0
+          imagePullPolicy: Always
           env:
             - name: HTTPS_HOST
               valueFrom:
@@ -109,6 +111,7 @@ spec:
               mountPath: /run/acme
         - name: certificate-manager
           image: ghcr.io/acmesh-official/acme.sh:3.1.6
+          imagePullPolicy: Always
           command:
             - /bin/sh
             - /scripts/cert-manager.sh
