@@ -94,7 +94,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-              add: ["NET_BIND_SERVICE"]
+              add: ["NET_BIND_SERVICE", "CHOWN"]
           volumeMounts:
             - name: nginx-config
               mountPath: /etc/nginx/templates/default.conf.template
