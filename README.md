@@ -132,9 +132,10 @@ PostgreSQL выполняет файл один раз — при первом �
 2. Указать теги образов в `deploy_k8s/overlays/prod/patches/image-tag.yaml`, настройки приложения —
    в `secret.yaml` (раздел «Секреты»), IP-адрес, ACME e-mail, разрешённые сети админки и параметры
    Gunicorn — в `configmap.yaml`.
-3. На одноузловом Kubernetes постоянные данные, база, Redis, ACME-состояние и логи хранятся
-   прямо в `~/JournalOMSA/service_data` на узле: `postgres/`, `redis/`, `nginx/`, `gunicorn/`, `celery/`.
-   Скопируйте существующие данные в эти каталоги перед переключением манифестов. Настройте резервное
+3. На одноузловом Kubernetes постоянные данные PostgreSQL, Redis, ACME-состояние и логи находятся
+   в `~/JournalOMSA/service_data` на узле: `postgres/`, `redis/`, `nginx/`, `gunicorn/`, `celery/`.
+   Kubernetes подключает существующие каталоги через статические PV/PVC без копирования данных;
+   в PodSpec используются PVC, поэтому Pod Security `restricted` допускает тома. Настройте резервное
    копирование каталога отдельно.
 4. Запустить — всё управление кластером идёт через `scripts/deploy_k8s.sh`:
 

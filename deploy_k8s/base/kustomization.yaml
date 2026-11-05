@@ -16,6 +16,7 @@ labels:
 
 resources:
   - namespace.yaml
+  - storage.yaml
   - postgres
   - redis
   - app

@@ -66,7 +66,7 @@ COPY nginx/nginx-wrapper.sh /usr/local/bin/nginx-wrapper.sh
 
 RUN chmod 0755 /usr/local/bin/nginx-wrapper.sh \
     && mkdir -p /etc/nginx/templates /var/www/certbot /run/acme \
-    && chown -R nginx:nginx /var/cache/nginx
+    && chown -R 101:101 /etc/nginx /var/cache/nginx /var/log/nginx
 
 EXPOSE 80 443 5600 5620
 ENTRYPOINT ["/usr/local/bin/nginx-wrapper.sh"]

@@ -64,8 +64,7 @@ spec:
               mountPath: /tmp
       volumes:
         - name: celery-data
-          hostPath:
-            path: /home/alex_a/JournalOMSA/service_data/celery
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: service-data-celery
         - name: tmp
           emptyDir: {}

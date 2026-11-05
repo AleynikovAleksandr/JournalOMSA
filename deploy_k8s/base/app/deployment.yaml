@@ -115,9 +115,8 @@ spec:
       volumes:
         # Журналы Gunicorn хранятся рядом с данными приложения на узле.
         - name: gunicorn-logs
-          hostPath:
-            path: /home/alex_a/JournalOMSA/service_data/gunicorn
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: service-data-gunicorn
         # worker_tmp_dir Gunicorn — в памяти
         - name: shm
           emptyDir:
@@ -218,9 +217,8 @@ spec:
               mountPath: /tmp
       volumes:
         - name: gunicorn-logs
-          hostPath:
-            path: /home/alex_a/JournalOMSA/service_data/gunicorn
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: service-data-gunicorn
         - name: shm
           emptyDir:
             medium: Memory

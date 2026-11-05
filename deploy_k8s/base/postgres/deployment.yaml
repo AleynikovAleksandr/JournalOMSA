@@ -22,6 +22,9 @@ spec:
       terminationGracePeriodSeconds: 60
       automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
         fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
@@ -109,6 +112,10 @@ spec:
               memory: 1536Mi
             limits:
               memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql
@@ -120,9 +127,8 @@ spec:
               mountPath: /dev/shm
       volumes:
         - name: data
-          hostPath:
-            path: /home/alex_a/JournalOMSA/service_data/postgres
-            type: DirectoryOrCreate
+          persistentVolumeClaim:
+            claimName: service-data-postgres
         - name: initdb
           configMap:
             name: postgres-initdb

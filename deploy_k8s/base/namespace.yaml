@@ -3,9 +3,7 @@ kind: Namespace
 metadata:
   name: omsa-ledger
   labels:
-    # Persistent data and application state must use the node's service_data
-    # directories via hostPath. Pod Security baseline rejects hostPath volumes,
-    # so enforcement is set to privileged for this namespace. Keep restricted
-    # warnings enabled to surface other hardening opportunities.
-    pod-security.kubernetes.io/enforce: privileged
+    # Persistent service_data directories are exposed through PVCs; workload
+    # security contexts conform to the restricted Pod Security Standard.
+    pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/warn: restricted
