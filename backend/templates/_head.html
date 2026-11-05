@@ -1,0 +1,11 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{# единый часовой пояс приложения: по нему считаются даты журнала («сегодня») #}
+<meta name="app-timezone" content="{{ app_timezone }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='images/brand.png', v=asset_version) }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
+<meta name="theme-color" content="#f5f5f7">
+{# WebRTC Control: подключается первым скриптом на каждой странице приложения #}
+<script src="{{ url_for('static', filename='js/webrtc_control.js', v=asset_version) }}"></script>
+<script src="{{ url_for('static', filename='js/time_format.js', v=asset_version) }}"></script>

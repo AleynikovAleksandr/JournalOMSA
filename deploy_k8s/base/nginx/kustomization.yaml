@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+
+configMapGenerator:
+  - name: nginx-config
+    files:
+      - nginx.conf.template=../../../nginx/nginx.conf.template
+      - cert-manager.sh=../../../nginx/cert-manager.sh
+      - stop-nginx.sh=../../../nginx/stop-nginx.sh
+      - resume-nginx.sh=../../../nginx/resume-nginx.sh

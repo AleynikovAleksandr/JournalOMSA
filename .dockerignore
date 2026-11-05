@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+tests
+local
+data_warehouses
+logs
+secrets
+deploy_k8s
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.ruff_cache
+.pytest_cache
+.DS_Store

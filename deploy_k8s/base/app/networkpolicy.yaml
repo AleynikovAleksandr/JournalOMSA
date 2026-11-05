@@ -1,0 +1,36 @@
+# forwarded_allow_ips в Gunicorn — CIDR всей сети подов. Чтобы этим доверием не мог
+# воспользоваться другой под кластера, к приложению подключаются только поды Nginx
+# (документ «Gunicorn», раздел 5). Требуется сетевой плагин с поддержкой NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-from-nginx-only
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx
+      ports:
+        - port: 5600
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: admin-from-nginx-only
+spec:
+  podSelector:
+    matchLabels:
+      app: admin
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx
+      ports:
+        - port: 5620

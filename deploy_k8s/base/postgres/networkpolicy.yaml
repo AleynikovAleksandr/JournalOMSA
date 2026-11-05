@@ -1,0 +1,19 @@
+# К PostgreSQL подключаются только поды приложения и Celery (метка tier: backend)
+# через Service postgres (порт 5490); снаружи кластера PostgreSQL недоступен.
+# NetworkPolicy проверяет порт пода (5432), а не порт Service (5490).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-access
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - port: 5432

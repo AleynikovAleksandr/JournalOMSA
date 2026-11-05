@@ -1,0 +1,62 @@
+# Тег образов приложения: номер выпуска или хеш коммита.
+# Образы backend, worker и Nginx собираются и загружаются в реестр (README, «Развёртывание»).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: certificate-bootstrap
+          image: registry.example.local/omsa-ledger/nginx:1.28.0
+      containers:
+        - name: nginx
+          image: registry.example.local/omsa-ledger/nginx:1.28.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: initial-data
+          image: registry.example.local/omsa-ledger/backend:1.0.0
+      containers:
+        - name: web
+          image: registry.example.local/omsa-ledger/backend:1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin
+spec:
+  template:
+    spec:
+      containers:
+        - name: admin
+          image: registry.example.local/omsa-ledger/backend:1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          image: registry.example.local/omsa-ledger/worker:1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+spec:
+  template:
+    spec:
+      containers:
+        - name: beat
+          image: registry.example.local/omsa-ledger/worker:1.0.0

@@ -1,0 +1,68 @@
+# Celery beat — строго один экземпляр: второй дублировал бы уведомления.
+# Стратегия Recreate: при обновлении старый под останавливается до запуска нового.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  labels:
+    app: beat
+    tier: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: beat
+  template:
+    metadata:
+      labels:
+        app: beat
+        tier: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: beat
+          image: omsa-ledger/worker:dev
+          command:
+            - celery
+            - -A
+            - worker.celery_app
+            - beat
+            - --loglevel=info
+            - --schedule=/app/service_data/celery/celerybeat-schedule
+            - --logfile=/app/service_data/celery/beat.log
+          envFrom:
+            - configMapRef:
+                name: omsa-ledger-config
+            - secretRef:
+                name: omsa-ledger-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: celery-data
+              mountPath: /app/service_data/celery
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: celery-data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

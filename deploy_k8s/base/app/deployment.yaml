@@ -1,0 +1,222 @@
+# Сервисы приложения (документы «Gunicorn» и «Страницы Flask и порты»).
+#
+# Соединения с PostgreSQL (max_connections = 100):
+#   web   — до 4 подов × 3 воркера × (3 + 2) = 60;
+#   admin — 2 пода × 1 воркер × (3 + 2) = 10;
+#   Celery worker — 2 процесса × 5 = 10. Итого не более 80, остальное — администрирование.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+    tier: backend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: web
+        tier: backend
+    spec:
+      # Больше graceful_timeout Gunicorn (30 с): Kubernetes не прерывает завершение запросов
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Справочники и первичный администратор; скрипт идемпотентен
+        - name: initial-data
+          image: omsa-ledger/backend:dev
+          command: ["python", "-m", "database.initial_data"]
+          envFrom:
+            - configMapRef:
+                name: omsa-ledger-config
+            - secretRef:
+                name: omsa-ledger-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: web
+          image: omsa-ledger/backend:dev
+          command: ["/app/scripts/run_gunicorn.sh"]
+          env:
+            - name: APP_MODULE
+              value: "app.main:create_portal_app('web')"
+            - name: GUNICORN_BIND
+              value: "0.0.0.0:5600"
+          envFrom:
+            - configMapRef:
+                name: omsa-ledger-config
+            - secretRef:
+                name: omsa-ledger-secrets
+          ports:
+            - name: http
+              containerPort: 5600
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Под успевает исключиться из балансировки до начала остановки
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: gunicorn-logs
+              mountPath: /app/service_data/gunicorn
+            - name: shm
+              mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Каталог журналов logs/gunicorn подключается к поду как том
+        - name: gunicorn-logs
+          emptyDir: {}
+        # worker_tmp_dir Gunicorn — в памяти
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin
+  labels:
+    app: admin
+    tier: backend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: admin
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: admin
+        tier: backend
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admin
+          image: omsa-ledger/backend:dev
+          command: ["/app/scripts/run_gunicorn.sh"]
+          env:
+            - name: APP_MODULE
+              value: "app.main:create_portal_app('admin')"
+            - name: GUNICORN_BIND
+              value: "0.0.0.0:5620"
+            # env имеет приоритет над envFrom (в ConfigMap WEB_CONCURRENCY=3 для web)
+            - name: WEB_CONCURRENCY
+              value: "1"
+          envFrom:
+            - configMapRef:
+                name: omsa-ledger-config
+            - secretRef:
+                name: omsa-ledger-secrets
+          ports:
+            - name: http
+              containerPort: 5620
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: gunicorn-logs
+              mountPath: /app/service_data/gunicorn
+            - name: shm
+              mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: gunicorn-logs
+          emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: tmp
+          emptyDir: {}

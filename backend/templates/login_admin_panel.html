@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+{% include "_head.html" %}
+<title>Вход в систему — OMSA Ledger</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login_admin.css', v=asset_version) }}">
+</head>
+
+<body>
+<!-- ============================================================
+     РАЗМЕТКА
+     ============================================================ -->
+<div class="lg-root">
+
+  <!-- ---------- левая половина: форма входа ---------- -->
+  <div class="lg-pane">
+    <div class="lg-form">
+
+      <div class="lg-head">
+        <h1 class="lg-title">Вход в систему управления пользователями</h1>
+        <p class="lg-sub">Войдите, чтобы управлять учётными записями и правами пользователей.</p>
+      </div>
+
+      <form id="lgForm" class="lg-fields" novalidate data-redirect="{{ url_for('admin_pages.users') }}" data-notifications="off">
+
+        <div class="lg-field">
+          <label for="lg-login">Логин</label>
+          <input id="lg-login" class="lg-input" name="login" type="text" autocomplete="username" placeholder="Введите логин" maxlength="100">
+        </div>
+
+        <div class="lg-field">
+          <label for="lg-pass">Пароль</label>
+          <div class="lg-pass-wrap">
+            <input id="lg-pass" class="lg-input lg-input--pass" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" maxlength="256">
+            <button id="lgEye" class="lg-eye" type="button" aria-label="Показать пароль"></button>
+          </div>
+        </div>
+
+        <div class="lg-error-row">
+          <p id="lgError" class="lg-error" role="alert"></p>
+        </div>
+
+        <button id="lgSubmit" class="lg-submit" type="submit">Войти</button>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ---------- правая половина: оформление ---------- -->
+  <div class="lg-art">
+    <div class="lg-beam lg-beam--1"></div>
+    <div class="lg-beam lg-beam--2"></div>
+    <div class="lg-veil"></div>
+
+    <div class="lg-stack">
+      <img class="lg-logo" alt="OMSA Ledger" src="{{ url_for('static', filename='images/logo.png', v=asset_version) }}">
+      <div class="lg-brand">
+        <span>OMSA Ledger</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/login.js', v=asset_version) }}"></script>
+</body>
+</html>

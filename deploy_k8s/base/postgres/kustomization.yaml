@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+
+# Начальная схема подключается в /docker-entrypoint-initdb.d по пути из
+# документа «Образы Docker». Выполняется один раз — при первом запуске с пустым томом данных,
+# поэтому имя ConfigMap без хеша: изменение файла не перезапускает PostgreSQL.
+configMapGenerator:
+  - name: postgres-initdb
+    files:
+      - schema.sql=../../../backend/database/schema.sql
+    options:
+      disableNameSuffixHash: true

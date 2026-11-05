@@ -1,0 +1,293 @@
+/* ============================================================
+   1. БАЗА
+   ============================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: #ffffff;
+  font-family: universalSans, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+a { color: #3d5d80; text-decoration: none; }
+a:hover { color: #0a0a0a; }
+
+input::placeholder { color: #a1a1a6; }
+
+/* ============================================================
+   2. КАРКАС: форма слева, оформление справа
+   ============================================================ */
+.lg-root {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  background: #ffffff;
+}
+
+.lg-pane {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 48px 56px;
+  background: #ffffff;
+}
+
+.lg-form {
+  width: 100%;
+  max-width: 392px;
+  display: flex;
+  flex-direction: column;
+  gap: 29px;
+  align-self: center;
+  margin-top: -56px;
+}
+
+/* ============================================================
+   3. ЗАГОЛОВОК
+   ============================================================ */
+.lg-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  text-align: center;
+}
+.lg-title {
+  margin: 0;
+  width: 100%;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: -0.6px;
+  color: #0a0a0a;
+  text-wrap: balance;
+}
+.lg-sub {
+  margin: 0;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 20px;
+  color: #7d8187;
+  text-wrap: balance;
+}
+
+/* ============================================================
+   4. ФОРМА
+   ============================================================ */
+.lg-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lg-field label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #0a0a0a;
+}
+
+.lg-input {
+  height: 52px;
+  width: 100%;
+  padding: 0 15px;
+  border-radius: 20px;
+  border: 1px solid #d5d9e2;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 24px;
+  color: #0a0a0a;
+  outline: none;
+}
+.lg-input--pass { padding-right: 48px; }
+
+.lg-pass-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lg-eye {
+  position: absolute;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #6e6e73;
+  cursor: pointer;
+}
+.lg-eye:hover { background: rgba(0, 0, 0, 0.05); color: #1d1d1f; }
+
+/* строка ошибки держит высоту, чтобы форма не прыгала */
+.lg-error-row {
+  min-height: 16px;
+  display: flex;
+  justify-content: center;
+}
+.lg-error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  color: #ff3b30;
+}
+
+.lg-submit {
+  height: 42px;
+  width: 107px;
+  align-self: center;
+  border: none;
+  border-radius: 9999px;
+  background: #0a0a0a;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lg-submit:hover { background: #1f2228; }
+
+/* ============================================================
+   5. ПРАВАЯ ПАНЕЛЬ: световые лучи и логотип
+   ============================================================ */
+.lg-art {
+  position: relative;
+  overflow: hidden;
+  background: #050505;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lg-beam {
+  position: absolute;
+  inset: 0;
+  filter: blur(46px);
+  opacity: 0.85;
+}
+.lg-beam--1 {
+  background: conic-gradient(from 180deg at 99% 40% in lab, rgb(255,255,255) 18deg, rgb(156,184,221) 36deg, rgba(17,17,17,0) 90deg, rgba(17,17,17,0) 342deg, rgb(255,255,255) 360deg);
+  animation: lgBeam 9s ease-in-out infinite;
+}
+.lg-beam--2 {
+  background: conic-gradient(from 0deg at 99% 60% in lab, rgb(255,255,255) 0deg, rgba(17,17,17,0) 18deg, rgba(17,17,17,0) 270deg, rgb(156,184,221) 324deg, rgb(255,255,255) 342deg);
+  animation: lgBeam 11s ease-in-out infinite;
+}
+/* затемнение левого верхнего угла, чтобы лучи не спорили с формой */
+.lg-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: radial-gradient(120% 90% at 6% 12%, rgba(5,5,5,0.96) 0%, rgba(5,5,5,0.7) 42%, rgba(5,5,5,0) 78%);
+  pointer-events: none;
+}
+
+@keyframes lgBeam {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+.lg-stack {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  padding: 48px 0;
+}
+.lg-logo {
+  width: 88%;
+  max-width: none;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  margin: -44px 0 0 -6%;
+}
+.lg-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  margin-top: -28px;
+}
+.lg-brand span {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-beam { animation: none; }
+}
+
+/* ============================================================
+   6. АДАПТИВ
+   ============================================================ */
+/* Большой монитор */
+@media (min-width: 1600px) {
+  .lg-form { max-width: 440px; }
+  .lg-title { font-size: 27px; line-height: 35px; }
+}
+/* Ноутбук */
+@media (max-width: 1280px) {
+  .lg-pane { padding: 44px 40px; }
+}
+/* Планшет-ландшафт */
+@media (max-width: 1120px) {
+  .lg-root { grid-template-columns: minmax(0, 1fr) 42%; }
+  .lg-pane { padding: 40px 32px; }
+  .lg-form { max-width: 352px; margin-top: -32px; }
+  .lg-title { font-size: 21px; line-height: 28px; }
+}
+/* Планшет-портрет: правая панель уходит наверх узкой полосой */
+@media (max-width: 860px) {
+  .lg-root { grid-template-columns: minmax(0, 1fr); grid-template-rows: 208px minmax(0, 1fr); }
+  .lg-art { grid-row: 1; }
+  .lg-pane { grid-row: 2; padding: 40px 32px; }
+  .lg-form { margin-top: 0; max-width: 420px; }
+  .lg-stack { gap: 0; padding: 0; }
+  .lg-sub { text-wrap: wrap; }
+  .lg-logo { width: 152px; margin: 0; }
+  .lg-brand { margin-top: -18px; }
+}
+/* Телефон */
+@media (max-width: 640px) {
+  .lg-root { grid-template-rows: 172px minmax(0, 1fr); }
+  .lg-pane { padding: 28px 20px 36px; justify-content: flex-start; }
+  .lg-form { gap: 22px; max-width: none; }
+  .lg-logo { width: 122px; }
+  .lg-brand { margin-top: -14px; }
+  .lg-title { font-size: 20px; line-height: 27px; }
+  .lg-sub { font-size: 13px; line-height: 19px; text-wrap: wrap; }
+  .lg-pane .lg-input { height: 44px; font-size: 14px; padding-left: 13px; }
+  .lg-pane label { font-size: 13px; }
+}
+@media (max-width: 400px) {
+  .lg-root { grid-template-rows: 146px minmax(0, 1fr); }
+  .lg-logo { width: 100px; }
+  .lg-brand { margin-top: -12px; }
+  .lg-title { font-size: 19px; line-height: 26px; }
+}
+
+.lg-submit:disabled { opacity: 0.6; cursor: default; }

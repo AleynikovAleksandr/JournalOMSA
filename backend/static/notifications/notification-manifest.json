@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "icon": "/static/images/brand.png",
+  "url": "/journal?record_id={journal_id}",
+  "body": "{fio} — {date} {time}, {type}",
+  "actions": [
+    {"action": "open", "title": "Открыть"}
+  ],
+  "events": {
+    "assigned": {"title": "Вам назначена новая задача"},
+    "remind_24h": {"title": "Завтра: проверка {type} в {time}"},
+    "remind_1h": {"title": "Через час: проверка {type} в {time}"},
+    "due": {"title": "Наступило время проверки"},
+    "overdue": {"title": "Задача не завершена"},
+    "changed": {"title": "Задача изменена"}
+  }
+}

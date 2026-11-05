@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+{% include "_head.html" %}
+<title>Журнал проверок — OMSA Ledger</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/journal.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/notifications.css', v=asset_version) }}">
+</head>
+
+<body>
+<!-- ============================================================
+     РАЗМЕТКА
+     ============================================================ -->
+
+<div id="loading" class="loading">Загрузка…</div>
+
+<div id="app" class="app" hidden>
+
+  <!-- ---------- шапка ---------- -->
+  <header class="jr-header">
+    <div class="jr-brand">
+      <img class="brand-logo" alt="OMSA Ledger" width="26" height="26" src="{{ url_for('static', filename='images/brand.png', v=asset_version) }}">
+      <span class="jr-brand-name">OMSA Ledger</span>
+    </div>
+
+    <nav class="jr-nav">
+      <button id="navNewGroup" class="jtab" type="button" data-click="onNewGroupMenu">Новая группа</button>
+      <button id="navRefs" class="jtab" type="button" data-click="onReferences">Справочники</button>
+      <a id="navUsers" class="jtab" href="{{ admin_url }}" hidden>Управление пользователями</a>
+    </nav>
+
+    <div class="jr-burger">
+      <button class="icon-btn" type="button" data-click="onToggleMobileMenu" title="Меню">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div id="mobileMenu"></div>
+    </div>
+
+    <div class="jr-header-right">
+      <button class="icon-btn" type="button" data-click="onLogout" title="Выход">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="jr-main-grid">
+
+    <!-- ---------- левая колонка ---------- -->
+    <div class="col">
+
+      <!-- календарь -->
+      <div class="card">
+        <div class="cal-head">
+          <button class="cal-nav" type="button" data-click="onPrevMonth">‹</button>
+          <span id="monthLabel" class="cal-month"></span>
+          <button class="cal-nav" type="button" data-click="onNextMonth">›</button>
+        </div>
+        <div id="calWeekdays" class="cal-grid"></div>
+        <div id="calCells" class="cal-grid"></div>
+        <div class="cal-foot">
+          <div class="field">
+            <span class="field__label">Выбранная дата</span>
+            <span id="selectedDate" class="cal-foot__date"></span>
+          </div>
+          <button class="pill-btn" type="button" data-click="onToday">Сегодня</button>
+        </div>
+      </div>
+
+      <!-- мои задачи -->
+      <div class="card card--flat">
+        <p class="card-title">Мои задачи</p>
+
+        <div class="check-row">
+          <button class="check-btn" type="button" data-click="onToggleMyTasks">
+            <span id="chkMyTasks" class="radio-box"></span>
+            Мои задачи
+          </button>
+          <button class="check-btn" type="button" data-click="onToggleCompleted">
+            <span id="chkCompleted" class="radio-box"></span>
+            Завершённые
+          </button>
+        </div>
+
+        <div class="table-scroll--tall">
+          <table class="jr-table jr-table--tasks">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>ФИО</th>
+                <th>Исполнитель</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody id="tasksBody"></tbody>
+          </table>
+          <p id="tasksEmpty" class="empty-note" hidden>Нет задач по фильтру</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ---------- правая колонка ---------- -->
+    <div class="col">
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:stretch;">
+
+        <!-- поиск и фильтры -->
+        <div class="card card--grow">
+          <div class="search-wrap">
+            <span class="search-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="searchFio" class="search-input" type="text" placeholder="ФИО аттестуемого"
+                   data-input="onSearchChange" data-keydown="onSearchKeyDown">
+            <button id="searchClear" class="search-clear" type="button" data-click="onClearSearchFio" title="Очистить">
+              <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.4668 16.9336C7.29915 16.9336 6.20345 16.7122 5.17969 16.2695C4.15592 15.8324 3.25667 15.2264 2.48193 14.4517C1.70719 13.6714 1.09847 12.7721 0.655762 11.7539C0.218587 10.7301 0 9.63444 0 8.4668C0 7.29915 0.218587 6.20345 0.655762 5.17969C1.09847 4.15592 1.70719 3.25667 2.48193 2.48193C3.25667 1.70719 4.15592 1.10124 5.17969 0.664062C6.20345 0.221354 7.29915 0 8.4668 0C9.63444 0 10.7301 0.221354 11.7539 0.664062C12.7777 1.10124 13.6769 1.70719 14.4517 2.48193C15.2264 3.25667 15.8324 4.15592 16.2695 5.17969C16.7122 6.20345 16.9336 7.29915 16.9336 8.4668C16.9336 9.63444 16.7122 10.7301 16.2695 11.7539C15.8324 12.7721 15.2264 13.6714 14.4517 14.4517C13.6769 15.2264 12.7777 15.8324 11.7539 16.2695C10.7301 16.7122 9.63444 16.9336 8.4668 16.9336ZM5.67773 11.9531C5.87695 11.9531 6.04574 11.8867 6.18408 11.7539L8.4751 9.44629L10.7744 11.7539C10.9017 11.8867 11.0649 11.9531 11.2642 11.9531C11.4578 11.9531 11.6211 11.8867 11.7539 11.7539C11.8867 11.6156 11.9531 11.4523 11.9531 11.2642C11.9531 11.0594 11.8867 10.8962 11.7539 10.7744L9.44629 8.4751L11.7622 6.16748C11.895 6.02913 11.9614 5.86589 11.9614 5.67773C11.9614 5.48958 11.895 5.3291 11.7622 5.19629C11.6294 5.06348 11.4689 4.99707 11.2808 4.99707C11.0981 4.99707 10.9404 5.06348 10.8076 5.19629L8.4751 7.51221L6.15918 5.20459C6.02083 5.07731 5.86035 5.01367 5.67773 5.01367C5.48958 5.01367 5.3291 5.08008 5.19629 5.21289C5.06348 5.34017 4.99707 5.50065 4.99707 5.69434C4.99707 5.87695 5.06348 6.03743 5.19629 6.17578L7.50391 8.4751L5.19629 10.7827C5.06348 10.9155 4.99707 11.076 4.99707 11.2642C4.99707 11.4523 5.06348 11.6156 5.19629 11.7539C5.3291 11.8867 5.48958 11.9531 5.67773 11.9531Z" fill="#999999"/></svg>
+            </button>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div id="execWrap" style="position:relative;flex:1;">
+              <button class="select-btn" type="button" data-click="onToggleExecDropdown">
+                <span id="execLabel" class="select-btn__text"></span>
+                <span id="execChev" class="select-btn__chev">
+                  <svg width="9" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="#6e6e73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </button>
+              <div id="execMenu"></div>
+            </div>
+          </div>
+
+          <div class="dates-row">
+            <div id="datesPair" class="dates-pair">
+              <div class="field">
+                <span class="field__label">с</span>
+                <div style="position:relative;">
+                  <button id="calFromBtn" class="select-btn" type="button" data-cal="from" data-click="onOpenCal">
+                    <span id="dateFromLabel" class="select-btn__text"></span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field__label">по</span>
+                <div style="position:relative;">
+                  <button id="calToBtn" class="select-btn" type="button" data-cal="to" data-click="onOpenCal">
+                    <span id="dateToLabel" class="select-btn__text"></span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="check-btn check-btn--limit" type="button" data-click="onToggleNoDateLimit">
+            <span id="chkNoLimit" class="check-box"></span>
+            Без ограничения
+          </button>
+        </div>
+
+        <!-- организация выбранной записи -->
+        <div class="card card--grow">
+          <div class="card-head">
+            <p class="card-title">Организация</p>
+            <button id="orgDetailsBtn" class="pill-btn" type="button" data-click="onOrgDetails">Подробнее</button>
+          </div>
+          <div class="org-list">
+            <div class="org-item">
+              <span class="org-item__label">Наименование</span>
+              <span id="orgName" class="org-item__value"></span>
+            </div>
+            <div class="org-item">
+              <span class="org-item__label">Телефон</span>
+              <span id="orgPhone" class="org-item__value"></span>
+            </div>
+            <div class="org-item">
+              <span class="org-item__label">Контактное лицо</span>
+              <span id="orgContact" class="org-item__value"></span>
+            </div>
+            <div class="org-item">
+              <span class="org-item__label">E-Mail</span>
+              <span id="orgEmail" class="org-item__value org-item__value--mail"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- журнал -->
+      <div class="card card--table">
+        <div class="table-scroll">
+          <table class="jr-table jr-table--journal">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Вид</th>
+                <th>Дата</th>
+                <th>Время</th>
+                <th>№</th>
+                <th>ФИО</th>
+                <th>Категория</th>
+                <th>Организация</th>
+                <th>Исполнитель</th>
+                <th>Статус</th>
+                <th class="col-icon"></th>
+                <th id="thDelete" class="col-icon" hidden></th>
+              </tr>
+            </thead>
+            <tbody id="journalBody"></tbody>
+          </table>
+        </div>
+        <p id="journalEmpty" class="empty-note" hidden>Нет записей по заданным условиям</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- всплывающие слои: календари, время, списки, статусы задач -->
+<div id="popovers"></div>
+<!-- модальные окна -->
+<div id="modalRoot"></div>
+<!-- уведомления о результатах операций -->
+<div id="toastRoot"></div>
+<!-- обязательные уведомления о задачах, если системные уведомления запрещены -->
+<div id="notifyRoot"></div>
+
+<!-- ============================================================
+     СКРИПТЫ
+     ============================================================ -->
+<script src="{{ url_for('static', filename='js/omsa_core.js', v=asset_version) }}"></script>
+<script src="{{ url_for('static', filename='js/notify/notifications.js', v=asset_version) }}"></script>
+<script src="{{ url_for('static', filename='js/journal.js', v=asset_version) }}"></script>
+</body>
+</html>

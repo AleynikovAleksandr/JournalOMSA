@@ -1,0 +1,22 @@
+# Автомасштабирование web: от 2 до 4 подов при загрузке CPU выше 70 % (документ «Gunicorn», раздел 6).
+# Сервис admin работает в двух подах без автомасштабирования (нагрузка — администраторы).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

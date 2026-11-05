@@ -1,0 +1,288 @@
+// OMSA Ledger — описание сообщений и сервисов (Protocol Buffers).
+//
+// Сообщения повторяют данные REST/JSON-API (ТЗ, раздел 5) и служат
+// единым описанием структур для интеграций. Имена полей совпадают
+// с полями JSON-ответов API.
+
+syntax = "proto3";
+
+package omsa.ledger.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------------
+// Общие типы
+// ---------------------------------------------------------------------------
+
+// Дата проверки в формате ГГГГ-ММ-ДД и время ЧЧ:ММ (местное время приложения)
+message CheckMoment {
+  string date = 1;
+  string time = 2;
+}
+
+message IdName {
+  int64 id = 1;
+  string name = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Авторизация (ТЗ, 4 и 5.1)
+// ---------------------------------------------------------------------------
+
+message LoginRequest {
+  string login = 1;
+  string password = 2;
+}
+
+message ChangePasswordRequest {
+  string old_password = 1;
+  string new_password = 2;
+}
+
+// Refresh-токен передаётся в HttpOnly-cookie и в теле ответа не возвращается
+message TokenResponse {
+  string access_token = 1;
+  string token_type = 2;  // "bearer"
+  int32 expires_in = 3;   // секунды
+  CurrentUser user = 4;
+}
+
+message CurrentUser {
+  int64 id = 1;
+  string uuid = 2;  // claim sub в JWT
+  string fio = 3;
+  string short_name = 4;
+  string login = 5;
+  string profile = 6;
+  int64 group_id = 7;
+  string group_name = 8;
+  repeated string rights = 9;  // grpAdd, grpEdit, grpDel, menuRefs, menuSettings, jrnOwnOnly, jrnStatusOnly, jrnDel, usrEdit
+  bool is_fired = 10;
+  string portal = 11;  // web (5600) или admin (5620)
+  map<string, string> links = 12;
+}
+
+service AuthService {
+  rpc Login(LoginRequest) returns (TokenResponse);
+  rpc Refresh(google.protobuf.Empty) returns (TokenResponse);
+  rpc Logout(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc ChangePassword(ChangePasswordRequest) returns (TokenResponse);
+  rpc Me(google.protobuf.Empty) returns (CurrentUser);
+}
+
+// ---------------------------------------------------------------------------
+// Журнал проверок (ТЗ, 5.3 и 5.4)
+// ---------------------------------------------------------------------------
+
+message CheckGroup {
+  int64 id = 1;
+  string date = 2;
+  string time = 3;
+  int64 type_check_id = 4;
+  string type = 5;
+  int32 records = 6;
+}
+
+message CheckGroupInput {
+  string date = 1;
+  string time = 2;
+  int64 type_check_id = 3;
+}
+
+message JournalRecord {
+  int64 id = 1;
+  int64 group_id = 2;
+  string date = 3;
+  string time = 4;
+  int64 type_check_id = 5;
+  string type = 6;
+  int32 number = 7;
+  string fio = 8;
+  int64 category_id = 9;
+  string category = 10;
+  int64 organization_id = 11;
+  string organization = 12;
+  int64 executor_id = 13;
+  string executor = 14;
+  string executor_fio = 15;
+  int64 solution_id = 16;
+  string status = 17;
+  bool status_final = 18;
+  string note = 19;
+  int32 version = 20;  // оптимистическая блокировка
+}
+
+message JournalRecordInput {
+  optional int64 group_id = 1;
+  string date = 2;
+  string time = 3;
+  int64 type_check_id = 4;
+  string fio = 5;
+  int64 category_id = 6;
+  int64 organization_id = 7;
+  int64 executor_id = 8;
+  optional int64 solution_id = 9;
+  string note = 10;
+  optional int32 version = 11;
+}
+
+message JournalFilter {
+  string fio = 1;
+  optional int64 executor_id = 2;
+  string date_from = 3;
+  string date_to = 4;
+  bool my = 5;
+  optional bool completed = 6;
+}
+
+message RecordId {
+  int64 id = 1;
+}
+
+message UpdateRecordRequest {
+  int64 id = 1;
+  JournalRecordInput record = 2;
+}
+
+message UpdateStatusRequest {
+  int64 id = 1;
+  int64 solution_id = 2;
+  optional int32 version = 3;
+}
+
+message UpdateNoteRequest {
+  int64 id = 1;
+  string note = 2;
+  optional int32 version = 3;
+}
+
+message JournalRecordList {
+  repeated JournalRecord items = 1;
+}
+
+message CheckGroupList {
+  repeated CheckGroup items = 1;
+}
+
+message UpdateGroupRequest {
+  int64 id = 1;
+  CheckGroupInput group = 2;
+}
+
+service JournalService {
+  rpc ListRecords(JournalFilter) returns (JournalRecordList);
+  rpc GetRecord(RecordId) returns (JournalRecord);
+  rpc CreateRecord(JournalRecordInput) returns (JournalRecord);
+  rpc UpdateRecord(UpdateRecordRequest) returns (JournalRecord);
+  rpc UpdateStatus(UpdateStatusRequest) returns (JournalRecord);
+  rpc UpdateNote(UpdateNoteRequest) returns (JournalRecord);
+  rpc DeleteRecord(RecordId) returns (google.protobuf.Empty);
+
+  rpc ListGroups(google.protobuf.Empty) returns (CheckGroupList);
+  rpc CreateGroup(CheckGroupInput) returns (CheckGroup);
+  rpc UpdateGroup(UpdateGroupRequest) returns (CheckGroup);
+  rpc DeleteGroup(RecordId) returns (google.protobuf.Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Задачи и уведомления (ТЗ, раздел 2 и 5.2)
+// ---------------------------------------------------------------------------
+
+enum NotificationKind {
+  NOTIFICATION_KIND_UNSPECIFIED = 0;
+  ASSIGNED = 1;    // назначение задачи
+  REMIND_24H = 2;  // предварительное напоминание (сутки)
+  REMIND_1H = 3;   // предварительное напоминание (час)
+  DUE = 4;         // наступление времени задачи
+  OVERDUE = 5;     // напоминание о незавершённой задаче
+  CHANGED = 6;     // изменение задачи
+}
+
+message Notification {
+  int64 id = 1;
+  NotificationKind kind = 2;
+  string title = 3;
+  string body = 4;
+  int64 journal_id = 5;
+  string fio = 6;
+  string date = 7;
+  string time = 8;
+  string check_type = 9;
+  google.protobuf.Timestamp fire_at = 10;
+  google.protobuf.Timestamp shown_at = 11;
+}
+
+message NotificationList {
+  repeated Notification items = 1;
+}
+
+message SubscribeRequest {
+  string permission = 1;  // granted, denied, default, unsupported
+}
+
+message TasksRequest {
+  bool completed = 1;
+}
+
+service TaskService {
+  rpc MyTasks(TasksRequest) returns (JournalRecordList);
+  rpc Upcoming(google.protobuf.Empty) returns (JournalRecordList);
+  rpc Due(google.protobuf.Empty) returns (JournalRecordList);
+  rpc Complete(RecordId) returns (JournalRecord);
+}
+
+service NotificationService {
+  rpc Subscribe(SubscribeRequest) returns (google.protobuf.Empty);
+  rpc Pending(google.protobuf.Empty) returns (NotificationList);
+  rpc History(google.protobuf.Empty) returns (NotificationList);
+  rpc Ack(RecordId) returns (Notification);
+}
+
+// ---------------------------------------------------------------------------
+// Справочники и пользователи (ТЗ, 5.5, 5.6, раздел 11)
+// ---------------------------------------------------------------------------
+
+message Organization {
+  int64 id = 1;
+  string name = 2;
+  string address = 3;
+  string phone = 4;
+  string contact = 5;
+  string email = 6;
+  string note = 7;
+}
+
+message User {
+  int64 id = 1;
+  string fio = 2;
+  string short_name = 3;
+  string login = 4;
+  string profile = 5;
+  int64 group_id = 6;
+  string group_name = 7;
+  bool is_fired = 8;
+  repeated string rights = 9;
+  int32 failed_login_attempts = 10;
+  google.protobuf.Timestamp locked_until = 11;
+}
+
+message UserGroup {
+  int64 id = 1;
+  string name = 2;
+  bool is_archive = 3;
+  int32 members = 4;
+}
+
+message Solution {
+  int64 id = 1;
+  string name = 2;
+  bool is_final = 3;  // завершает задачу и прекращает уведомления
+}
+
+message References {
+  repeated IdName categories = 1;
+  repeated IdName type_checks = 2;
+  repeated Solution solutions = 3;
+  repeated User executors = 4;
+}

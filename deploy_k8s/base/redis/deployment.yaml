@@ -1,0 +1,84 @@
+# Redis Stack (документ «Образы Docker», 3.2): брокер Celery, лимиты входа по IP,
+# блокировки записей, Pub/Sub для WebSocket. Очередь Celery — данные, а не кэш:
+# политика noeviction, журнал AOF с записью раз в секунду.
+# Тег latest: перед пересозданием пода делается резервная копия данных Redis.
+# Веб-интерфейс RedisInsight (порт 8001) не публикуется — он не запрашивает пароль.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis/redis-stack:latest
+          env:
+            - name: REDIS_ARGS
+              value: >-
+                --aclfile /usr/local/etc/redis/users.acl
+                --appendonly yes
+                --appendfsync everysec
+                --no-appendfsync-on-rewrite yes
+                --auto-aof-rewrite-percentage 100
+                --auto-aof-rewrite-min-size 64mb
+                --save 300 10
+                --save 60 10000
+                --maxmemory 256mb
+                --maxmemory-policy noeviction
+                --databases 16
+                --tcp-keepalive 300
+                --timeout 0
+                --loglevel notice
+                --io-threads 4
+          ports:
+            - name: redis
+              containerPort: 6379
+          # Без пароля Redis отвечает только на PING (пользователь default)
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 320Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: acl
+              mountPath: /usr/local/etc/redis/users.acl
+              subPath: users.acl
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+        - name: acl
+          secret:
+            secretName: redis-acl
+            defaultMode: 0444

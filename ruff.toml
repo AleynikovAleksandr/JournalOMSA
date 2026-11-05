@@ -1,0 +1,37 @@
+line-length = 120
+target-version = "py313"
+src = ["backend", "."]
+extend-exclude = [".venv", "service_data", "logs"]
+
+[lint]
+select = [
+    "E", "W", "F",   # pycodestyle, pyflakes
+    "I",             # порядок импортов
+    "N",             # именование
+    "B",             # типовые ошибки
+    "UP",            # современный синтаксис
+    "SIM",           # упрощения
+    "C4",            # comprehensions
+    "PIE",
+    "RET",
+    "S",             # безопасность (bandit)
+    "RUF",
+]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # кириллица в строках и комментариях — норма для проекта
+    "S105", "S106",                # имена полей вида *password* не являются паролями
+    "RET504",
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "S311", "S603", "S607", "N802"]
+"local/**" = ["S104", "S311", "S603", "S607"]
+"backend/gunicorn/gunicorn.conf.py" = ["S104", "S108"]  # адрес и /dev/shm — по документу «Gunicorn»
+"backend/app/models/**" = ["RUF012"]  # __table_args__ / __mapper_args__ — соглашение SQLAlchemy
+"backend/app/schemas/responses.py" = ["N818"]  # имена исключений предметной области без суффикса Error
+
+[lint.isort]
+known-first-party = ["app", "core", "database", "casbin_security", "worker"]
+
+[format]
+quote-style = "double"

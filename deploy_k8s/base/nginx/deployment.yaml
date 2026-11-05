@@ -1,0 +1,183 @@
+# Nginx reverse proxy; internal TLS port 443 is exposed externally as port 449.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      shareProcessNamespace: true
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: certificate-bootstrap
+          image: registry.example.local/omsa-ledger/nginx:1.28.0
+          command:
+            - /bin/sh
+            - -ec
+            - >-
+              mkdir -p /etc/nginx/certs;
+              if [ ! -s /etc/nginx/certs/fullchain.pem ] || [ ! -s /etc/nginx/certs/privkey.pem ]; then
+                openssl req -x509 -nodes -days 1 -newkey rsa:2048
+                  -keyout /etc/nginx/certs/privkey.pem
+                  -out /etc/nginx/certs/fullchain.pem
+                  -subj "/CN=${HTTPS_HOST}";
+              fi;
+              chmod 600 /etc/nginx/certs/privkey.pem;
+              chmod 644 /etc/nginx/certs/fullchain.pem
+          env:
+            - name: HTTPS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: HTTPS_HOST
+          volumeMounts:
+            - name: certificates
+              mountPath: /etc/nginx/certs
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: nginx
+          image: registry.example.local/omsa-ledger/nginx:1.28.0
+          env:
+            - name: HTTPS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: HTTPS_HOST
+            - name: ADMIN_ALLOWED_CIDRS
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: ADMIN_ALLOWED_CIDRS
+            - name: NGINX_ENVSUBST_FILTER
+              value: "^(HTTPS_HOST|ADMIN_ALLOWED_CIDRS)$"
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+            - name: web
+              containerPort: 5600
+            - name: admin
+              containerPort: 5620
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - test -e /run/acme/nginx-paused || test -s /var/run/nginx.pid
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 192Mi
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: nginx.conf.template
+              readOnly: true
+            - name: certificates
+              mountPath: /etc/nginx/certs
+            - name: nginx-run
+              mountPath: /var/run
+            - name: acme-control
+              mountPath: /run/acme
+        - name: certificate-manager
+          image: ghcr.io/acmesh-official/acme.sh:3.1.6
+          command:
+            - /bin/sh
+            - /scripts/cert-manager.sh
+          env:
+            - name: HTTPS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: HTTPS_HOST
+            - name: ACME_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: ACME_EMAIL
+            - name: ACME_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: ACME_ENABLED
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+          volumeMounts:
+            - name: data
+              mountPath: /acme.sh
+            - name: certificates
+              mountPath: /etc/nginx/certs
+            - name: nginx-run
+              mountPath: /var/run
+            - name: acme-control
+              mountPath: /run/acme
+            - name: nginx-scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nginx-data
+        - name: certificates
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: acme-control
+          emptyDir: {}
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+            defaultMode: 0444
+            items:
+              - key: nginx.conf.template
+                path: nginx.conf.template
+        - name: nginx-scripts
+          configMap:
+            name: nginx-config
+            defaultMode: 0555
+            items:
+              - key: cert-manager.sh
+                path: cert-manager.sh
+              - key: stop-nginx.sh
+                path: stop-nginx.sh
+              - key: resume-nginx.sh
+                path: resume-nginx.sh

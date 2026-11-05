@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+
+# Secret redis-acl — из файла users.acl в этом каталоге (в репозиторий не добавляется,
+# формат — в README, раздел «Секреты»). Пользователи Redis загружаются из файла при запуске,
+# поэтому при изменении файла под Redis перезапускается (имя Secret с хешем).
+secretGenerator:
+  - name: redis-acl
+    files:
+      - users.acl

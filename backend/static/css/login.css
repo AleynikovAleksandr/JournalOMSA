@@ -1,0 +1,21 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+a { color: #0066cc; }
+a:hover { color: #0071e3; }
+
+#lg-login:focus,
+#lg-pass:focus {
+  border-color: #86868b;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+}
+#lgEye:hover {
+  background: rgba(0,0,0,0.05);
+  color: #1d1d1f;
+}
+#lgSubmit:hover {
+  background: #1f2228;
+}
+#lgSubmit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

@@ -1,0 +1,28 @@
+# Public app ports are 91, 443, 449, 5600 and 5620. Port 443 also serves ACME TLS-ALPN.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app: nginx
+  ports:
+    - name: http
+      port: 91
+      targetPort: http
+    - name: acme-tls
+      port: 443
+      targetPort: https
+    - name: https-alt
+      port: 449
+      targetPort: https
+    - name: web
+      port: 5600
+      targetPort: web
+    - name: admin
+      port: 5620
+      targetPort: admin

@@ -1,0 +1,82 @@
+# Celery worker: повторные напоминания о незавершённых задачах и служебные задачи
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+    tier: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+        tier: backend
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: omsa-ledger/worker:dev
+          command:
+            - celery
+            - -A
+            - worker.celery_app
+            - worker
+            - -Q
+            - notifications,maintenance
+            - --concurrency=2
+            - -n
+            - worker@$(HOSTNAME)
+            - --loglevel=info
+            - --logfile=/app/service_data/celery/celery.log
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: omsa-ledger-config
+            - secretRef:
+                name: omsa-ledger-secrets
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "celery -A worker.celery_app inspect ping -d worker@$HOSTNAME --timeout 10 || exit 1"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: celery-logs
+              mountPath: /app/service_data/celery
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: celery-logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
