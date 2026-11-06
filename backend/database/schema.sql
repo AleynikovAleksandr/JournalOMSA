@@ -57,7 +57,7 @@ CREATE TABLE "TOrganization" (
 	-- Почта
 	mail VARCHAR(100),
 	-- Примечание
-	comments VARCHAR(150),
+	comments TEXT,
 	CONSTRAINT "pk_TOrganization" PRIMARY KEY (id)
 );
 
@@ -92,6 +92,8 @@ CREATE TABLE "TUserGroups" (
 	id SERIAL NOT NULL,
 	-- Наименование группы
 	name VARCHAR(150) NOT NULL,
+	-- Права группы; NULL сохраняет индивидуальные права старых учётных записей до настройки группы
+	rules VARCHAR(150),
 	-- Группа «Архив (уволенные)»: показывает уволенных сотрудников
 	is_archive BOOLEAN DEFAULT false NOT NULL,
 	CONSTRAINT "pk_TUserGroups" PRIMARY KEY (id),

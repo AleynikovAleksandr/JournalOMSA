@@ -325,6 +325,7 @@ input:focus, textarea:focus { outline: none; }
   color: #050505;
 }
 .um-detail-input:disabled { color: #8e8e93; cursor: not-allowed; }
+.select-field:disabled { color: #8e8e93; cursor: not-allowed; }
 .um-icon--field { width: 28px; height: 28px; border-radius: 8px; }
 
 .select-wrap { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }

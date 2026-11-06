@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import String
+from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.session import db
@@ -18,4 +18,4 @@ class Organization(db.Model):
     phone: Mapped[str | None] = mapped_column(String(50))
     contact: Mapped[str | None] = mapped_column("FIOContact", String(150))
     email: Mapped[str | None] = mapped_column("mail", String(100))
-    note: Mapped[str | None] = mapped_column("comments", String(150))
+    note: Mapped[str | None] = mapped_column("comments", Text)

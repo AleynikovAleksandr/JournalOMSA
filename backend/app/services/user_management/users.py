@@ -11,7 +11,7 @@ from app.schemas.commands import UserCreateInput, UserUpdateInput
 from app.schemas.responses import Conflict, NotFound, PermissionDenied, ValidationFailed
 from app.services.access_control.access import AccessPolicy
 from app.services.access_control.principal import Principal
-from app.services.access_control.rights import MENU_SETTINGS, format_rules
+from app.services.access_control.rights import DEFAULT_RIGHTS, MENU_SETTINGS, format_rules, parse_rules
 from app.services.authentication.auth import normalize_login
 from app.services.authentication.passwords import PasswordManager
 from core.clock import Clock
@@ -19,6 +19,7 @@ from core.interprocess.events import EventPublisher, RealtimeEvent, RealtimeEven
 
 NO_SETTINGS_RIGHT = "Недостаточно прав для управления пользователями"
 NO_EDIT_RIGHT = "Недостаточно прав для редактирования данных сотрудника"
+SYSTEM_ADMIN_FIO = "Администратор системы"
 
 
 class UserService:
@@ -84,14 +85,16 @@ class UserService:
     def create(self, data: UserCreateInput) -> User:
         self._require("manage")
         group = self._group(data.group_id)
+        if data.fio.strip() == SYSTEM_ADMIN_FIO:
+            raise Conflict("ФИО «Администратор системы» зарезервировано")
         user = User(
             uuid=uuid4(),
             fio=data.fio.strip(),
             login=self._login(data.login),
             profile=(data.profile or "").strip() or None,
             group=group,
-            is_fired=data.is_fired,
-            rules=format_rules(data.rights),
+            is_fired=False,
+            rules=format_rules(parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS),
             failed_login_attempts=0,
         )
         self._passwords.set_initial(user, data.password)
@@ -103,6 +106,19 @@ class UserService:
         self._require("manage")
         self._require("edit_profile", NO_EDIT_RIGHT)
         user = self.get(user_id)
+        is_system_admin = user.fio == SYSTEM_ADMIN_FIO
+        if not is_system_admin and data.fio.strip() == SYSTEM_ADMIN_FIO:
+            raise Conflict("ФИО «Администратор системы» зарезервировано")
+        if is_system_admin and (
+            normalize_login(data.login) != user.login
+            or data.password
+            or data.group_id != user.group_id
+        ):
+            raise Conflict("Логин, пароль и группу учётной записи «Администратор системы» изменить нельзя")
+        if is_system_admin and data.is_fired:
+            raise Conflict("Учётную запись «Администратор системы» нельзя уволить")
+        if user.fio == SYSTEM_ADMIN_FIO and data.fio.strip() != SYSTEM_ADMIN_FIO:
+            raise Conflict("ФИО учётной записи «Администратор системы» изменить нельзя")
         if data.password and user.locked_until is not None and user.locked_until > self._clock.now():
             raise ValidationFailed(
                 "Новый пароль можно задать после окончания блокировки",
@@ -111,7 +127,12 @@ class UserService:
         if data.is_fired and not user.is_fired:
             self._not_self(user, "Нельзя отметить уволенной собственную учётную запись")
         if data.group_id != user.group_id:
-            user.group = self._group(data.group_id)
+            group = self._group(data.group_id)
+            next_rights = parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS
+            if user.id == self._principal.user_id and MENU_SETTINGS not in next_rights:
+                raise PermissionDenied("Нельзя перевести себя в группу без права «Настройки»")
+            user.group = group
+            user.rules = format_rules(next_rights)
         user.fio = data.fio.strip()
         user.login = self._login(data.login, exclude_id=user.id)
         user.profile = (data.profile or "").strip() or None
@@ -126,6 +147,8 @@ class UserService:
         self._require("edit_profile", NO_EDIT_RIGHT)
         user = self.get(user_id)
         if is_fired:
+            if user.fio == SYSTEM_ADMIN_FIO:
+                raise Conflict("Учётную запись «Администратор системы» нельзя уволить")
             self._not_self(user, "Нельзя отметить уволенной собственную учётную запись")
         self._set_fired(user, is_fired)
         self._uow.commit()
@@ -137,21 +160,11 @@ class UserService:
             # Права уволенного меняются сразу: открытые соединения закрываются
             self._close_connections(user)
 
-    def set_rights(self, user_id: int, rights: frozenset[str]) -> User:
-        self._policy.require(self._principal, "rights", "assign", NO_SETTINGS_RIGHT)
-        user = self.get(user_id)
-        if user.id == self._principal.user_id and MENU_SETTINGS not in rights:
-            raise PermissionDenied("Нельзя снять с себя право «Настройки»")
-        try:
-            user.rules = format_rules(rights)
-        except ValueError as exc:
-            raise ValidationFailed(str(exc), details={"rights": [str(exc)]}) from exc
-        self._uow.commit()
-        return user
-
     def delete(self, user_id: int) -> None:
         self._require("manage")
         user = self.get(user_id)
+        if user.fio == SYSTEM_ADMIN_FIO:
+            raise Conflict("Учётную запись «Администратор системы» удалить нельзя")
         self._not_self(user, "Нельзя удалить собственную учётную запись")
         if self._uow.users.is_referenced_in_journal(user.id):
             raise Conflict("Сотрудник указан в журнале — удаление невозможно, отметьте его уволенным")

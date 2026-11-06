@@ -3,8 +3,10 @@
 <head>
 {% include "_head.html" %}
 <title>Журнал проверок — OMSA Ledger</title>
+<script src="{{ url_for('static', filename='js/loading_screen.js', v=asset_version) }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/journal.css', v=asset_version) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/notifications.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/loading_screen.css', v=asset_version) }}">
 </head>
 
 <body>
@@ -12,9 +14,9 @@
      РАЗМЕТКА
      ============================================================ -->
 
-<div id="loading" class="loading">Загрузка…</div>
+{% include "_loading_screen.html" %}
 
-<div id="app" class="app" hidden>
+<div id="app" class="app">
 
   <!-- ---------- шапка ---------- -->
   <header class="jr-header">

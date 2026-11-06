@@ -8,6 +8,8 @@ from uuid import UUID
 from app.models.user import User
 from app.services.access_control.rights import parse_rules
 
+SYSTEM_ADMIN_FIO = "Администратор системы"
+
 
 @dataclass(frozen=True, slots=True)
 class Principal:
@@ -25,7 +27,11 @@ class Principal:
             uuid=user.uuid,
             fio=user.fio,
             login=user.login,
-            rights=parse_rules(user.rules),
+            rights=parse_rules(
+                user.rules
+                if user.fio == SYSTEM_ADMIN_FIO or user.group.rules is None
+                else user.group.rules
+            ),
             is_fired=user.is_fired,
         )
 

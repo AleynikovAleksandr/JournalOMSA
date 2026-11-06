@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 
@@ -66,8 +66,6 @@ class UserCreateInput:
     password: str
     group_id: int
     profile: str | None = None
-    is_fired: bool = False
-    rights: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True, slots=True)

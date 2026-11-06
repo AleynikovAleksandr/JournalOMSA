@@ -1190,7 +1190,7 @@
             formField('e-mail:', s.orgFEmail, 'onOrgFEmail', 'fmail', 100) +
             '<div class="field" data-mk="fnote">' +
               '<span class="field__label">Примечание:</span>' +
-              '<textarea class="input input--sm" rows="4" maxlength="150" data-input="onOrgFNote"' + dis + '>' + esc(s.orgFNote) + '</textarea>' +
+              '<textarea class="input input--sm" rows="4" data-input="onOrgFNote"' + dis + '>' + esc(s.orgFNote) + '</textarea>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1210,7 +1210,7 @@
     else if (m.type === 'record') { inner = modalRecordHtml(m); extraClass = ' jr-modal-card--record'; }
     else if (m.type === 'note') inner = modalNoteHtml(m);
     else if (m.type === 'org') inner = modalOrgHtml(m);
-    else if (m.type === 'references') { inner = modalReferencesHtml(); extraClass = ' jr-modal-card--wide'; }
+    else if (m.type === 'references') { inner = modalReferencesHtml(); extraClass = ' jr-modal-card--wide jr-modal-card--references'; }
 
     return '<div class="modal-overlay" data-mk="overlay">' +
         '<div class="jr-modal-card' + extraClass + '" data-mk="card-' + m.type + '">' + inner + '</div>' +
@@ -1248,7 +1248,7 @@
   const { patch, patchRows, bindEvents } = OMSA.createRenderer(H);
 
   const el = (id) => document.getElementById(id);
-  const elLoading = el('loading'), elApp = el('app');
+  const elApp = el('app');
   const elMonthLabel = el('monthLabel'), elCalWeekdays = el('calWeekdays'), elCalCells = el('calCells');
   const elSelectedDate = el('selectedDate');
   const elTasksBody = el('tasksBody'), elTasksEmpty = el('tasksEmpty');
@@ -1281,8 +1281,11 @@
   function render() {
     const s = state;
 
-    if (!s.dataLoaded) { elLoading.hidden = false; elApp.hidden = true; return; }
-    elLoading.hidden = true;
+    if (!s.dataLoaded) {
+      elApp.hidden = !!(window.OMSA_LOGIN_LOADING && window.OMSA_LOGIN_LOADING.active);
+      return;
+    }
+    if (window.OMSA_LOGIN_LOADING) window.OMSA_LOGIN_LOADING.hide();
     elApp.hidden = false;
 
     const r = s.RIGHTS;

@@ -10,7 +10,7 @@ from app.api.deps import ContainerDep, PrincipalDep, UowDep, form
 from app.container import Container
 from app.models.user import User
 from app.schemas.commands import UserCreateInput, UserUpdateInput
-from app.schemas.responses import UserGroupOut, UserOut
+from app.schemas.responses import UserGroupOut, UserOut, ValidationFailed
 from app.web.forms import CsrfOnlyForm, FiredForm, RightsForm, UserCreateForm, UserGroupForm, UserUpdateForm
 
 router = APIRouter(prefix="/users", tags=["Пользователи"])
@@ -49,6 +49,8 @@ def create_user(
     uow: UowDep,
     data: Annotated[dict[str, Any], Depends(form(UserCreateForm))],
 ):
+    if data.get("rights"):
+        raise ValidationFailed("Права назначаются группе", details={"rights": ["Выберите права группы"]})
     user = container.user_service(uow, principal).create(
         UserCreateInput(
             fio=data["fio"],
@@ -56,8 +58,6 @@ def create_user(
             password=data["password"],
             group_id=data["group_id"],
             profile=data.get("profile"),
-            is_fired=bool(data.get("is_fired")),
-            rights=frozenset(data.get("rights") or ()),
         )
     )
     return _user_out(container, user)
@@ -98,19 +98,6 @@ def set_fired(
     return _user_out(container, user)
 
 
-@router.put("/{user_id}/rights", response_model=UserOut)
-def set_rights(
-    user_id: int,
-    principal: PrincipalDep,
-    container: ContainerDep,
-    uow: UowDep,
-    data: Annotated[dict[str, Any], Depends(form(RightsForm))],
-):
-    """Сохранение прав сотрудника одной строкой (поле rules)."""
-    rights = frozenset(data.get("rights") or ())
-    return _user_out(container, container.user_service(uow, principal).set_rights(user_id, rights))
-
-
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(form(CsrfOnlyForm))])
 def delete_user(user_id: int, principal: PrincipalDep, container: ContainerDep, uow: UowDep) -> Response:
     container.user_service(uow, principal).delete(user_id)
@@ -125,13 +112,26 @@ GroupForm = Annotated[dict[str, Any], Depends(form(UserGroupForm))]
 
 @groups_router.get("", response_model=list[UserGroupOut])
 def list_user_groups(principal: PrincipalDep, container: ContainerDep, uow: UowDep):
-    groups = container.user_group_service(uow, principal).list()
-    return [UserGroupOut.of(group, members) for group, members in groups]
+    service = container.user_group_service(uow, principal)
+    return [UserGroupOut.of(group, members, preview=service.rights_preview(group)) for group, members in service.list()]
 
 
 @groups_router.post("", response_model=UserGroupOut, status_code=status.HTTP_201_CREATED)
 def create_user_group(principal: PrincipalDep, container: ContainerDep, uow: UowDep, data: GroupForm):
     return UserGroupOut.of(container.user_group_service(uow, principal).create(data["name"]))
+
+
+@groups_router.put("/{group_id}/rights", response_model=UserGroupOut)
+def set_user_group_rights(
+    group_id: int,
+    principal: PrincipalDep,
+    container: ContainerDep,
+    uow: UowDep,
+    data: Annotated[dict[str, Any], Depends(form(RightsForm))],
+):
+    service = container.user_group_service(uow, principal)
+    group = service.set_rights(group_id, frozenset(data.get("rights") or ()))
+    return UserGroupOut.of(group, service.members(group))
 
 
 @groups_router.put("/{group_id}", response_model=UserGroupOut)

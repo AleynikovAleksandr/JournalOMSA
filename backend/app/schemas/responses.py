@@ -19,7 +19,16 @@ from app.models.organization import Organization
 from app.models.references import Option
 from app.models.user import User, UserGroup
 from app.schemas.short_name import short_name
-from app.services.access_control.rights import RIGHT_KEYS, RIGHTS_TREE, parse_rules
+from app.services.access_control.rights import RIGHT_KEYS, RIGHTS_TREE, format_rules, parse_rules
+
+SYSTEM_ADMIN_FIO = "Администратор системы"
+
+
+def effective_user_rules(user: User) -> str | None:
+    """Системный администратор сохраняет личные права при настройке своей группы."""
+    if user.fio == SYSTEM_ADMIN_FIO or user.group.rules is None:
+        return user.rules
+    return user.group.rules
 
 
 class IdName(BaseModel):
@@ -108,7 +117,7 @@ class MeOut(BaseModel):
             profile=user.profile,
             group_id=user.group_id,
             group_name=user.group.name,
-            rights=rights_list(user.rules),
+            rights=rights_list(effective_user_rules(user)),
             is_fired=user.is_fired,
             portal=portal,
             links={"admin": admin_url},
@@ -260,7 +269,7 @@ class UserOut(BaseModel):
             group_id=user.group_id,
             group_name=user.group.name,
             is_fired=user.is_fired,
-            rights=rights_list(user.rules),
+            rights=rights_list(effective_user_rules(user)),
             failed_login_attempts=user.failed_login_attempts,
             locked_until=user.locked_until,
             is_locked=is_locked,
@@ -272,10 +281,16 @@ class UserGroupOut(BaseModel):
     name: str
     is_archive: bool
     members: int
+    rights: list[str]
+    rights_configured: bool
 
     @classmethod
-    def of(cls, group: UserGroup, members: int = 0) -> UserGroupOut:
-        return cls(id=group.id, name=group.name, is_archive=group.is_archive, members=members)
+    def of(cls, group: UserGroup, members: int = 0, *, preview: frozenset[str] | None = None) -> UserGroupOut:
+        return cls(
+            id=group.id, name=group.name, is_archive=group.is_archive, members=members,
+            rights=rights_list(group.rules) if group.rules is not None else rights_list(format_rules(preview or ())),
+            rights_configured=group.rules is not None,
+        )
 
 
 # ---------------------------------------------------------------------------

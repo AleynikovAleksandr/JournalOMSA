@@ -23,7 +23,33 @@
 
       this.bindEvents();
       this.render();
+      this.initBackground();
       this.elements.login.focus();
+    }
+
+    initBackground() {
+      const image = this.document.getElementById('loginBg');
+      if (!image) return;
+      const page = image.closest('.login-page');
+      const reveal = () => {
+        if (!image.naturalWidth) {
+          page.classList.add('is-background-failed');
+          return;
+        }
+        if (image.decode) {
+          image.decode().then(
+            () => page.classList.add('is-background-ready'),
+            () => page.classList.add('is-background-failed'),
+          );
+        } else {
+          page.classList.add('is-background-ready');
+        }
+      };
+      if (image.complete) reveal();
+      else {
+        image.addEventListener('load', reveal, { once: true });
+        image.addEventListener('error', () => page.classList.add('is-background-failed'), { once: true });
+      }
     }
 
     bindEvents() {
@@ -77,6 +103,11 @@
         }
 
         await this.requestNotificationPermission();
+        try {
+          this.window.sessionStorage.setItem('omsa-show-loading-after-login', '1');
+        } catch (error) {
+          // Storage may be disabled; login still continues without the transition screen.
+        }
         this.window.location.replace(this.redirectTo);
       } catch (error) {
         this.setState({ busy: false, error: 'Сервер недоступен. Повторите попытку' });

@@ -1,7 +1,7 @@
 """Схема настроек OMSA Ledger (Pydantic): имена и типы параметров и их проверка.
 
-Значений в коде нет — все параметры обязательны и читаются из переменных окружения,
-которые передаёт Secret omsa-ledger-secrets (deploy_k8s/overlays/prod/secret.yaml).
+Настройки читаются из окружения omsa-ledger-secrets; у app_env и app_version есть
+безопасные значения по умолчанию для запуска без отдельных записей в Secret.
 Имя переменной окружения — имя поля в верхнем регистре. Загрузка — core.config.get_settings().
 """
 
@@ -29,8 +29,8 @@ def _split(value: str) -> tuple[str, ...]:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
 
-    app_env: str
-    app_version: str
+    app_env: str = "production"
+    app_version: str = "dev"
 
     # ---- ключи ----
     secret_key: str

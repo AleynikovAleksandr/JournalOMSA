@@ -195,7 +195,3 @@ spec:
             items:
               - key: cert-manager.sh
                 path: cert-manager.sh
-              - key: stop-nginx.sh
-                path: stop-nginx.sh
-              - key: resume-nginx.sh
-                path: resume-nginx.sh

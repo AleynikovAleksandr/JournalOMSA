@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from app.interfaces.repositories import UnitOfWork
 from app.models.user import UserGroup
-from app.schemas.responses import Conflict, NotFound
+from app.schemas.responses import Conflict, NotFound, PermissionDenied, ValidationFailed
 from app.services.access_control.access import AccessPolicy
 from app.services.access_control.principal import Principal
-from app.services.user_management.users import NO_SETTINGS_RIGHT
+from app.services.access_control.rights import DEFAULT_RIGHTS, MENU_SETTINGS, format_rules, parse_rules
+from app.services.user_management.users import NO_SETTINGS_RIGHT, SYSTEM_ADMIN_FIO
 
 
 class UserGroupService:
@@ -28,6 +29,12 @@ class UserGroupService:
         active, fired = self._uow.user_groups.member_counts()
         return fired if group.is_archive else active.get(group.id, 0)
 
+    def rights_preview(self, group: UserGroup) -> frozenset[str]:
+        if group.rules is not None:
+            return parse_rules(group.rules)
+        members = self._uow.users.list(group_id=group.id)
+        return parse_rules(members[0].rules) if members else DEFAULT_RIGHTS
+
     def _get(self, group_id: int) -> UserGroup:
         group = self._uow.user_groups.get(group_id)
         if group is None:
@@ -42,7 +49,7 @@ class UserGroupService:
 
     def create(self, name: str) -> UserGroup:
         self._policy.require(self._principal, "user_groups", "manage", NO_SETTINGS_RIGHT)
-        group = UserGroup(name=self._name(name), is_archive=False)
+        group = UserGroup(name=self._name(name), is_archive=False, rules=format_rules(DEFAULT_RIGHTS))
         self._uow.user_groups.add(group)
         self._uow.commit()
         return group
@@ -63,3 +70,27 @@ class UserGroupService:
             raise Conflict("Группа не пуста — сначала перенесите сотрудников")
         self._uow.user_groups.delete(group)
         self._uow.commit()
+
+    def set_rights(self, group_id: int, rights: frozenset[str]) -> UserGroup:
+        self._policy.require(self._principal, "rights", "assign", NO_SETTINGS_RIGHT)
+        group = self._get(group_id)
+        if group.is_archive:
+            raise Conflict("У архивной группы нет собственных прав")
+        current = self._uow.users.get(self._principal.user_id)
+        if (
+            current is not None
+            and current.group_id == group_id
+            and current.fio != SYSTEM_ADMIN_FIO
+            and MENU_SETTINGS not in rights
+        ):
+            raise PermissionDenied("Нельзя снять у своей группы право «Настройки»")
+        try:
+            formatted = format_rules(rights)
+        except ValueError as exc:
+            raise ValidationFailed(str(exc), details={"rights": [str(exc)]}) from exc
+        group.rules = formatted
+        for user in self._uow.users.list(group_id=group_id):
+            if user.fio != SYSTEM_ADMIN_FIO:
+                user.rules = formatted
+        self._uow.commit()
+        return group

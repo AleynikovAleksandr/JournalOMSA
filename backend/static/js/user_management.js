@@ -4,6 +4,7 @@
   const OMSA = window.OMSA;
   const esc = OMSA.esc;
   const api = new OMSA.ApiClient({ loginUrl: '/login' });
+  const SYSTEM_ADMIN_FIO = 'Администратор системы';
 
   
 
@@ -21,6 +22,7 @@
   });
   const toGroup = (g, prev) => ({
     id: g.id, name: g.name, isArchive: g.is_archive, members: g.members,
+    rights: rightsMap(g.rights), savedRights: rightsMap(g.rights), configured: g.rights_configured,
     collapsed: prev ? prev.collapsed : true,
   });
   const clone = (u) => ({ ...u, rights: { ...u.rights } });
@@ -54,6 +56,14 @@
   const showError = (err) => showToast((err && err.message) || 'Ошибка сервера');
 
   function sel() { return state.USERS.find((u) => u.id === state.selId) || null; }
+  function activeGroup() { return state.GROUPS.find((g) => g.id === state.activeGroupId) || null; }
+  function isSystemAdmin(u) { return !!u && u.fio === SYSTEM_ADMIN_FIO; }
+  function groupHasSystemAdmin(groupId) {
+    return state.USERS.some((u) => !u.isNew && u.groupId === groupId && isSystemAdmin(u));
+  }
+  function patchGroup(patch) {
+    setState((s) => ({ GROUPS: s.GROUPS.map((g) => g.id === s.activeGroupId ? { ...g, ...patch } : g) }));
+  }
   function savedOf(id) { return state.SAVED.find((u) => u.id === id) || null; }
   function patchSel(patch) {
     setState((s) => ({ USERS: s.USERS.map((u) => (u.id === s.selId ? { ...u, ...patch } : u)) }));
@@ -127,9 +137,9 @@
     setState((s) => {
       const opening = (s.GROUPS.find((g) => g.id === gid) || {}).collapsed;
       return {
-        GROUPS: s.GROUPS.map((g) => (g.id === gid ? { ...g, collapsed: !g.collapsed } : g)),
-        activeGroupId: opening ? gid : s.activeGroupId,
-        ...(opening ? clearSelection(s) : {}),
+        GROUPS: s.GROUPS.map((g) => ({ ...g, collapsed: opening ? g.id !== gid : true })),
+        activeGroupId: opening ? gid : null,
+        ...clearSelection(s),
       };
     });
   };
@@ -222,12 +232,13 @@
 
   H.onSelectUser = (e) => {
     const id = Number(e.currentTarget.getAttribute('data-id'));
+    const gid = Number(e.currentTarget.getAttribute('data-gid'));
     setState((s) => {
       const users = s.selId !== id ? revertUnsaved(s.USERS, s.SAVED, s.selId) : s.USERS;
       const picked = users.find((x) => x.id === id);
       return {
         USERS: users,
-        activeGroupId: picked ? picked.groupId : s.activeGroupId,
+        activeGroupId: picked ? gid : s.activeGroupId,
         selId: id,
         expandedId: s.expandedId === id ? null : id,
         detailsOpen: s.expandedId === id ? s.detailsOpen : false,
@@ -242,13 +253,13 @@
   H.onCredPasswordChange = (e) => patchSel({ password: e.target.value });
   H.onCredFioChange = (e) => patchSel({ fio: e.target.value });
   H.onCredGroupChange = (e) => patchSel({ groupId: Number(e.target.value) });
-  H.onToggleFired = () => { const u = sel(); if (u) patchSel({ fired: !u.fired }); };
+  H.onToggleFired = () => { const u = sel(); if (u && !isSystemAdmin(u)) patchSel({ fired: !u.fired }); };
 
   H.onRowToggleFired = async (e) => {
     e.stopPropagation();
     const id = Number(e.currentTarget.getAttribute('data-id'));
     const u = state.USERS.find((x) => x.id === id);
-    if (!u || u.isNew) return;
+    if (!u || u.isNew || isSystemAdmin(u)) return;
     const next = !placedFired(u);
     try {
       const saved = await api.patch('/api/users/' + id + '/fired', { is_fired: next });
@@ -275,24 +286,24 @@
   };
 
   H.onToggleRight = (e) => {
-    const u = sel();
-    if (!u) { showToast('Выберите сотрудника'); return; }
+    const g = activeGroup();
+    if (!g || g.isArchive) { showToast('Раскройте рабочую группу'); return; }
     const k = e.currentTarget.getAttribute('data-key');
-    patchSel({ rights: { ...u.rights, [k]: !u.rights[k] } });
+    patchGroup({ rights: { ...g.rights, [k]: !g.rights[k] } });
   };
   
-  function allRightsOn(u) {
+  function allRightsOn(g) {
     const restrictive = new Set(restrictiveKeys());
-    return !!u && rightKeys().every((k) => (restrictive.has(k) ? !u.rights[k] : u.rights[k]));
+    return !!g && rightKeys().every((k) => (restrictive.has(k) ? !g.rights[k] : g.rights[k]));
   }
   H.onToggleAllRights = () => {
-    const u = sel();
-    if (!u) { showToast('Выберите сотрудника'); return; }
+    const g = activeGroup();
+    if (!g || g.isArchive) { showToast('Раскройте рабочую группу'); return; }
     const restrictive = new Set(restrictiveKeys());
-    const turnOn = !allRightsOn(u);
+    const turnOn = !allRightsOn(g);
     const next = {};
     rightKeys().forEach((k) => { next[k] = restrictive.has(k) ? !turnOn : turnOn; });
-    patchSel({ rights: next });
+    patchGroup({ rights: next });
   };
 
   let tempId = 0;
@@ -307,9 +318,7 @@
     const firstWorking = s.GROUPS.find((g) => !g.isArchive);
     const gid = (cur && !cur.isNew && cur.groupId) || (active && active.id) || (firstWorking && firstWorking.id);
     if (!gid) { showToast('Сначала создайте группу'); return; }
-    const restrictive = new Set(restrictiveKeys());
-    const rights = {};
-    rightKeys().forEach((k) => { rights[k] = restrictive.has(k); });
+    const rights = { ...(s.GROUPS.find((g) => g.id === gid) || {}).rights };
     const id = --tempId;
     const gname = (s.GROUPS.find((g) => g.id === gid) || {}).name || '';
     setState({
@@ -323,34 +332,38 @@
 
   H.onSave = async () => {
     const u = sel();
-    if (!u) { showToast('Выберите сотрудника'); return; }
+    const group = activeGroup();
+    if (!u && (!group || group.isArchive)) { showToast('Раскройте рабочую группу'); return; }
     if (state.saving) return;
-    const rights = Object.keys(u.rights).filter((k) => u.rights[k]);
     setState({ saving: true });
     try {
+      if (group && !group.isArchive && ((!group.configured && !u) || JSON.stringify(group.rights) !== JSON.stringify(group.savedRights))) {
+        const rights = Object.keys(group.rights).filter((k) => group.rights[k]);
+        await api.put('/api/user-groups/' + group.id + '/rights', { rights });
+        setState((s) => ({ GROUPS: s.GROUPS.map((g) => g.id === group.id
+          ? { ...g, savedRights: { ...g.rights }, configured: true } : g) }));
+      }
       let saved = null;
-      if (u.isNew) {
+      if (u && u.isNew) {
         saved = await api.post('/api/users', {
           fio: u.fio, login: u.login, password: u.password, profile: u.profile,
-          group_id: u.groupId, is_fired: u.fired, rights,
+          group_id: u.groupId,
         });
-      } else {
+      } else if (u) {
         const base = savedOf(u.id);
         const cardChanged = !base || u.fio !== base.fio || u.login !== base.login || u.profile !== base.profile ||
           u.groupId !== base.groupId || u.fired !== base.fired || !!u.password;
-        const rightsChanged = !base || JSON.stringify(u.rights) !== JSON.stringify(base.rights);
         if (cardChanged) {
           saved = await api.put('/api/users/' + u.id, {
             fio: u.fio, login: u.login, profile: u.profile, group_id: u.groupId,
             is_fired: u.fired, password: u.password || null,
           });
         }
-        if (rightsChanged) saved = await api.put('/api/users/' + u.id + '/rights', { rights });
       }
       setState({ saving: false });
       if (saved) commitUser(toUser(saved), u.id);
       reloadGroups().catch(() => {});
-      showToast('Сотрудник и права сохранены');
+      showToast(u ? 'Сотрудник и права группы сохранены' : 'Права группы сохранены');
     } catch (err) {
       setState({ saving: false });
       showError(err);
@@ -411,6 +424,7 @@
     const s = state;
     const u = sel();
     const passwordLocked = passwordDisabled(u);
+    const identityLocked = !!(u && u.fio === SYSTEM_ADMIN_FIO);
     const groupOptions = s.GROUPS
       .filter((g) => !g.isArchive)
       .map((g) => '<option value="' + g.id + '"' + (u && u.groupId === g.id ? ' selected' : '') + '>' + esc(g.name) + '</option>')
@@ -419,16 +433,16 @@
     const extra = !s.detailsOpen ? '' : (
       '<div class="um-detail-row um-expand" data-mk="dfio">' +
         '<span class="um-detail-label">ФИО</span>' +
-        '<input class="um-detail-input" type="text" maxlength="150" data-input="onCredFioChange" placeholder="Фамилия Имя Отчество" value="' + esc(u ? u.fio : '') + '">' +
+        '<input class="um-detail-input" type="text" maxlength="150" data-input="onCredFioChange" placeholder="Фамилия Имя Отчество" value="' + esc(u ? u.fio : '') + '"' + (u && u.fio === SYSTEM_ADMIN_FIO ? ' disabled title="ФИО системной учётной записи изменить нельзя"' : '') + '>' +
       '</div>' +
       '<div class="um-detail-row um-expand" data-mk="dgroup">' +
         '<span class="um-detail-label">Группа</span>' +
         '<div class="select-wrap">' +
-          '<select class="select-field" data-change="onCredGroupChange">' + groupOptions + '</select>' +
+          '<select class="select-field" data-change="onCredGroupChange"' + (identityLocked ? ' disabled title="Группу системной учётной записи изменить нельзя"' : '') + '>' + groupOptions + '</select>' +
           '<span class="select-chev">' + ICON.chevSm + '</span>' +
         '</div>' +
       '</div>' +
-      '<button class="fired-toggle um-expand" type="button" data-mk="dfired" data-click="onToggleFired">' +
+      '<button class="fired-toggle um-expand" type="button" data-mk="dfired" data-click="onToggleFired"' + (u && u.isNew ? ' disabled title="Доступно после создания сотрудника"' : (identityLocked ? ' disabled title="Администратора системы нельзя уволить"' : '')) + '>' +
         '<span class="um-detail-label">Уволен</span>' +
         switchEl(!!(u && u.fired)) +
         '<span class="hint hint--sm">' + (u && u.fired ? 'запись не используется' : 'работает') + '</span>' +
@@ -439,17 +453,17 @@
       '<div class="um-detail um-expand" data-mk="detail">' +
         '<div class="um-detail-row" data-mk="dlogin">' +
           '<span class="um-detail-label">Логин</span>' +
-          '<input class="um-detail-input" type="text" maxlength="100" autocomplete="off" data-input="onCredLoginChange" placeholder="Введите логин" value="' + esc(u ? u.login : '') + '">' +
+          '<input class="um-detail-input" type="text" maxlength="100" autocomplete="off" data-input="onCredLoginChange" placeholder="Введите логин" value="' + esc(u ? u.login : '') + '"' + (identityLocked ? ' disabled title="Логин системной учётной записи изменить нельзя"' : '') + '>' +
           '<button class="um-icon um-icon--field" type="button" data-copy="login" data-click="onCopy" title="Скопировать логин">' + ICON.copy + '</button>' +
         '</div>' +
 
         '<div class="um-detail-row" data-mk="dpass">' +
           '<span class="um-detail-label">Пароль</span>' +
           '<input class="um-detail-input" type="' + (s.passVisible ? 'text' : 'password') + '" maxlength="256" autocomplete="new-password" data-input="onCredPasswordChange"' +
-          (passwordLocked ? ' disabled title="Пароль можно изменить после окончания блокировки"' : '') +
-          ' placeholder="' + (passwordLocked ? 'Доступно после окончания блокировки' : (u && u.isNew ? 'Введите пароль' : 'Введите новый пароль')) + '" value="' + esc(u ? u.password : '') + '">' +
-          '<button class="um-icon um-icon--field" type="button" data-click="onTogglePassVisible" title="Показать / скрыть"' + (passwordLocked ? ' disabled' : '') + '>' + (s.passVisible ? ICON.eyeOff : ICON.eye) + '</button>' +
-          '<button class="um-icon um-icon--field" type="button" data-copy="password" data-click="onCopy" title="Скопировать пароль"' + (passwordLocked ? ' disabled' : '') + '>' + ICON.copy + '</button>' +
+          (identityLocked ? ' disabled title="Пароль системной учётной записи изменить нельзя"' : (passwordLocked ? ' disabled title="Пароль можно изменить после окончания блокировки"' : '')) +
+          ' placeholder="' + (identityLocked ? 'Изменение пароля запрещено' : (passwordLocked ? 'Доступно после окончания блокировки' : (u && u.isNew ? 'Введите пароль' : 'Введите новый пароль'))) + '" value="' + esc(u ? u.password : '') + '">' +
+          '<button class="um-icon um-icon--field" type="button" data-click="onTogglePassVisible" title="Показать / скрыть"' + (passwordLocked || identityLocked ? ' disabled' : '') + '>' + (s.passVisible ? ICON.eyeOff : ICON.eye) + '</button>' +
+          '<button class="um-icon um-icon--field" type="button" data-copy="password" data-click="onCopy" title="Скопировать пароль"' + (passwordLocked || identityLocked ? ' disabled' : '') + '>' + ICON.copy + '</button>' +
         '</div>' +
 
         lockHint(u) +
@@ -498,11 +512,11 @@
         body += users.map((u, idx) => {
           const rowCls = s.selId === u.id ? ' is-selected' : (idx % 2 === 1 ? ' is-alt' : '');
           let row =
-            '<div class="um-row um-grid um-expand' + rowCls + '" data-mk="row" data-id="' + u.id + '" data-click="onSelectUser">' +
+            '<div class="um-row um-grid um-expand' + rowCls + '" data-mk="row" data-id="' + u.id + '" data-gid="' + g.id + '" data-click="onSelectUser">' +
               '<span class="um-indent cell-no">' + (u.isNew ? '—' : u.id) + '</span>' +
               '<span class="cell-fio' + (placedFired(u) ? ' is-fired' : '') + '">' + esc(u.fio || 'Новый сотрудник') + '</span>' +
               '<span class="cell-fired">' +
-                '<button class="fired-box' + (placedFired(u) ? ' is-on' : '') + '" type="button" data-id="' + u.id + '" data-click="onRowToggleFired" title="Переключить признак увольнения">' +
+                '<button class="fired-box' + (placedFired(u) ? ' is-on' : '') + '" type="button" data-id="' + u.id + '" data-click="onRowToggleFired" title="' + (isSystemAdmin(u) ? 'Администратора системы нельзя уволить' : 'Переключить признак увольнения') + '"' + (isSystemAdmin(u) ? ' disabled' : '') + '>' +
                   (placedFired(u) ? ICON.check : '') +
                 '</button>' +
               '</span>' +
@@ -533,15 +547,17 @@
 
   
   function rightsHtml() {
-    const u = sel();
-    const allOn = allRightsOn(u);
+    const g = activeGroup();
+    const groupHasAdmin = !!g && groupHasSystemAdmin(g.id);
+    const enabled = !!g && !g.isArchive;
+    const allOn = enabled && allRightsOn(g);
 
-    const groups = state.RIGHTS_TREE.map((g) =>
-      '<div class="rights-group" data-mk="rg' + esc(g.title) + '">' +
-        '<span class="rights-group__title">' + esc(g.title) + '</span>' +
-        g.items.map((i) => {
-          const on = !!(u && u.rights[i.key]);
-          return '<button class="right-item" type="button" data-mk="ri' + i.key + '" data-key="' + i.key + '" data-click="onToggleRight">' +
+    const groups = state.RIGHTS_TREE.map((section) =>
+      '<div class="rights-group" data-mk="rg' + esc(section.title) + '">' +
+        '<span class="rights-group__title">' + esc(section.title) + '</span>' +
+        section.items.map((i) => {
+          const on = !!(enabled && g.rights[i.key]);
+          return '<button class="right-item" type="button" data-mk="ri' + i.key + '" data-key="' + i.key + '" data-click="onToggleRight"' + (enabled ? '' : ' disabled') + '>' +
             '<span class="right-item__text">' +
               '<span class="right-item__label">' + esc(i.label) + '</span>' +
               '<span class="right-item__desc">' + esc(i.desc) + '</span>' +
@@ -554,16 +570,20 @@
     return '' +
       '<div class="rights-head" data-mk="rhead">' +
         '<span class="rights-head__title">Права пользователей</span>' +
-        '<span class="rights-head__sub">' + esc(u ? (u.fio || 'Новый сотрудник') : 'Сотрудник не выбран') + '</span>' +
+        '<span class="rights-head__sub">' + esc(enabled ? g.name : 'Раскройте рабочую группу') + '</span>' +
       '</div>' +
       groups +
-      '<button class="right-item right-item--all" type="button" data-mk="rall" data-click="onToggleAllRights">' +
+      '<button class="right-item right-item--all" type="button" data-mk="rall" data-click="onToggleAllRights"' + (enabled ? '' : ' disabled') + '>' +
         '<span class="right-item__text">' +
           '<span class="right-item__label">Полные права</span>' +
           '<span class="right-item__desc">Включает сразу все права выше и снимает ограничения журнала</span>' +
         '</span>' + switchEl(allOn) +
       '</button>' +
-      '<p class="rights-note" data-mk="rnote">Права выставляются индивидуально для выбранного сотрудника и сохраняются одной строкой в базе по кнопке «Сохранить».</p>';
+      '<p class="rights-note" data-mk="rnote">' + (enabled
+        ? (groupHasAdmin
+          ? 'Права сохраняются для группы и применяются ко всем её сотрудникам, кроме «Администратора системы».'
+          : (g.configured ? 'Права применяются ко всем сотрудникам группы после нажатия «Сохранить».' : 'Права группы ещё не заданы. Измените нужные переключатели и сохраните общие права для всей группы.'))
+        : 'Раскройте группу, чтобы назначить права всем её сотрудникам.') + '</p>';
   }
 
   
@@ -581,12 +601,13 @@
 
   function render() {
     if (!state.loaded) return;
+    if (window.OMSA_LOGIN_LOADING) window.OMSA_LOGIN_LOADING.hide();
     const u = sel();
 
     if (elSearch.value !== state.search) elSearch.value = state.search;
     elClear.classList.toggle('is-visible', state.search.length > 0);
 
-    elDelete.classList.toggle('is-off', !u);
+    elDelete.classList.toggle('is-off', !u || u.fio === SYSTEM_ADMIN_FIO);
     elArchive.classList.toggle('is-on', state.showArchive);
     elArchive.title = state.showArchive ? 'Скрыть архив уволенных' : 'Показать архив уволенных';
 

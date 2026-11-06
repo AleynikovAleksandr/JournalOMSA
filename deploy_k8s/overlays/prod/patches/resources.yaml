@@ -69,11 +69,11 @@ spec:
         - name: worker
           resources:
             requests:
-              cpu: 100m
-              memory: 1Gi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: 250m
-              memory: 7Gi
+              cpu: "1"
+              memory: 8Gi
 ---
 apiVersion: apps/v1
 kind: Deployment

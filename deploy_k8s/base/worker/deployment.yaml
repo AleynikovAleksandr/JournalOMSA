@@ -7,7 +7,7 @@ metadata:
     app: worker
     tier: backend
 spec:
-  replicas: 1
+  replicas: 3
   revisionHistoryLimit: 5
   selector:
     matchLabels:
@@ -41,7 +41,7 @@ spec:
             - -n
             - worker@$(HOSTNAME)
             - --loglevel=info
-            - --logfile=/app/service_data/celery/celery.log
+            - --logfile=/app/service_data/celery/worker-$(HOSTNAME).log
           env:
             - name: HOSTNAME
               valueFrom:
@@ -61,11 +61,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
-              memory: 1Gi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: 250m
-              memory: 7Gi
+              cpu: "1"
+              memory: 8Gi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

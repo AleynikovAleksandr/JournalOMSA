@@ -18,6 +18,7 @@ class UserGroup(db.Model):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), unique=True)
+    rules: Mapped[str | None] = mapped_column(String(150), nullable=True)
     is_archive: Mapped[bool] = mapped_column(
         Boolean,
         default=False,

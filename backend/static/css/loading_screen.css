@@ -1,0 +1,43 @@
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: #fff;
+}
+html.is-login-loading .loading-screen { display: flex; }
+.loading-screen__logo {
+  width: 64px;
+  height: 64px;
+  padding: 6px;
+  border-radius: 50%;
+  background: #050505;
+  object-fit: contain;
+  filter: brightness(1.5) contrast(1.1);
+}
+.loading-screen__track {
+  width: min(220px, 70vw);
+  height: 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #dedee3;
+}
+.loading-screen__fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #050505;
+  animation: loading-screen-progress 10s ease-in-out infinite;
+}
+@keyframes loading-screen-progress {
+  0% { width: 4%; }
+  85% { width: 88%; }
+  100% { width: 4%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-screen__fill { width: 55%; animation: none; }
+}

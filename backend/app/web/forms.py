@@ -139,7 +139,7 @@ class OrganizationForm(ApiForm):
         validators=[Optional(), Length(max=100, message="Не более 100 символов"), Email(message="Неверный e-mail")],
         filters=[_strip],
     )
-    note = StringField(validators=[Optional(), Length(max=150, message="Не более 150 символов")])
+    note = StringField(validators=[Optional()])
 
 
 # ---------------------------------------------------------------------------

@@ -151,6 +151,7 @@
       this.user = null;
       this.refreshing = null;
       this.listeners = [];
+      this.keepAliveTimer = null;
     }
 
     onSession(listener) { this.listeners.push(listener); }
@@ -160,7 +161,21 @@
       
       this.tokenExpiresAt = Date.now() + Math.max(0, (data.expires_in - 30)) * 1000;
       this.user = data.user;
+      this.startKeepAlive();
       this.listeners.forEach((fn) => fn(data));
+    }
+
+    startKeepAlive() {
+      if (this.keepAliveTimer) return;
+      const renewIfNeeded = () => {
+        if (!this.token || Date.now() < this.tokenExpiresAt - 5 * 60 * 1000) return;
+        if (global.document && global.document.visibilityState === 'hidden') return;
+        this.refresh().catch((error) => {
+          if (error.status === 401) this.redirectToLogin();
+        });
+      };
+      this.keepAliveTimer = global.setInterval(renewIfNeeded, 60 * 1000);
+      if (global.document) global.document.addEventListener('visibilitychange', renewIfNeeded);
     }
 
     
@@ -175,7 +190,7 @@
           .then(async (res) => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-              this.token = null;
+              if (res.status === 401) this.token = null;
               throw new ApiError(res.status, data.detail || 'Сессия завершена', data);
             }
             this.setSession(data);
@@ -200,7 +215,7 @@
       try {
         token = await this.accessToken();
       } catch (e) {
-        this.redirectToLogin();
+        if (e.status === 401) this.redirectToLogin();
         throw e;
       }
       const headers = { Authorization: 'Bearer ' + token, 'X-CSRFToken': this.csrf, Accept: 'application/json' };

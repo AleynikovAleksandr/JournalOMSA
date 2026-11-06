@@ -13,7 +13,7 @@ ROLE_ACTIVE = "active"
 
 
 class AccessPolicy:
-    """Права по модели Casbin: роль пользователя и ключи прав из TUsers.rules."""
+    """Права по модели Casbin: роль пользователя и права группы."""
 
     def __init__(self, acl: AccessControl) -> None:
         self._acl = acl
