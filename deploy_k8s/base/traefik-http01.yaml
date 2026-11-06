@@ -88,6 +88,8 @@ spec:
       labels:
         app: omsa-http01-traefik
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: omsa-http01-traefik
       automountServiceAccountToken: true
       containers:
@@ -97,14 +99,13 @@ spec:
             - --providers.kubernetesingress=true
             - --providers.kubernetesingress.ingressclass=traefik
             - --providers.kubernetesingress.namespaces=omsa-ledger
-            - --entrypoints.web.address=:8000
+            - --entrypoints.web.address=:80
             - --ping=true
             - --ping.entrypoint=web
             - --log.level=INFO
           ports:
             - name: web
-              containerPort: 8000
-              hostPort: 80
+              containerPort: 80
               protocol: TCP
           readinessProbe:
             httpGet:
