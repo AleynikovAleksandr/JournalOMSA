@@ -1,4 +1,4 @@
-# Public app ports are 91, 443, 449, 5600 and 5620. Nginx binds host TCP 443 for TLS-ALPN.
+# Nginx has no hostPort; forward public TCP 443 to the HTTPS NodePort for TLS-ALPN.
 apiVersion: v1
 kind: Service
 metadata:
@@ -17,6 +17,7 @@ spec:
     - name: https
       port: 443
       targetPort: https
+      nodePort: 31005
     - name: https-alt
       port: 449
       targetPort: https

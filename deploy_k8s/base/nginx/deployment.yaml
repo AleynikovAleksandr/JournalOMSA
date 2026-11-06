@@ -81,7 +81,6 @@ spec:
               containerPort: 80
             - name: https
               containerPort: 443
-              hostPort: 443
             - name: web
               containerPort: 5600
             - name: admin
