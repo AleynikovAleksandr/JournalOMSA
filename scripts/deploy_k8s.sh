@@ -15,8 +15,8 @@
 # stop    уменьшает число подов всех сервисов до нуля: сначала Nginx (новые запросы не
 #         принимаются), затем приложение и Celery, последними Redis и PostgreSQL.
 #         Тома с данными, Secret и внешний адрес балансировщика остаются; start поднимает всё обратно.
-# Nginx запускает acme.sh sidecar и сам получает/обновляет сертификат Let's Encrypt
-# через TLS-ALPN на внешнем TCP 443. Для проверки используется одна реплика Nginx.
+# start устанавливает cert-manager и HTTP-01 ingress на внешнем TCP 80, затем выпускает
+# сертификат и запускает Nginx. Nginx работает тремя репликами.
 #
 # ConfigMap PostgreSQL и Nginx подключают файлы backend/database/schema.sql и
 # nginx/nginx.conf.template из общего каталога проекта, поэтому kustomize запускается
@@ -116,6 +116,23 @@ restart_pods() {
   wait_ready "${targets[@]}"
 }
 
+ensure_tls_infrastructure() {
+  local cert_manager_version="v1.21.3"
+  kubectl apply -f "${root_dir}/deploy_k8s/base/namespace.yaml"
+  echo "Установка cert-manager ${cert_manager_version}"
+  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${cert_manager_version}/cert-manager.yaml"
+  kubectl apply -f "${root_dir}/deploy_k8s/base/traefik-http01.yaml"
+  kubectl -n kube-system rollout status deployment/omsa-http01-traefik --timeout="${rollout_timeout}"
+  kubectl -n cert-manager rollout status deployment/cert-manager --timeout="${rollout_timeout}"
+  kubectl -n cert-manager rollout status deployment/cert-manager-cainjector --timeout="${rollout_timeout}"
+  kubectl -n cert-manager rollout status deployment/cert-manager-webhook --timeout="${rollout_timeout}"
+
+  echo "Запрос IP-сертификата Let's Encrypt через внешний TCP 80"
+  kubectl apply -f "${root_dir}/deploy_k8s/base/tls/letsencrypt.yaml"
+  k wait --for=condition=Ready issuer/letsencrypt-ip --timeout="${rollout_timeout}"
+  k wait --for=condition=Ready certificate/omsa-nginx-tls --timeout="${rollout_timeout}"
+}
+
 # Работало ли приложение до запуска: после stop или при первой установке перезапуск не нужен
 app_was_running() {
   local replicas
@@ -130,6 +147,7 @@ cmd_start() {
     was_running=true
   fi
   remove_legacy_caddy
+  ensure_tls_infrastructure
   echo "Применение манифестов (${overlay})"
   build_manifests | kubectl apply -f -
   echo "Ожидание PostgreSQL и Redis"

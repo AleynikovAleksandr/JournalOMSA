@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: omsa-http01-traefik
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: omsa-http01-traefik
+  namespace: omsa-ledger
+rules:
+  - apiGroups: [""]
+    resources: ["services", "secrets", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: omsa-http01-traefik
+  namespace: omsa-ledger
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: omsa-http01-traefik
+subjects:
+  - kind: ServiceAccount
+    name: omsa-http01-traefik
+    namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: omsa-http01-traefik-ingressclass
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: omsa-http01-traefik-ingressclass
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: omsa-http01-traefik-ingressclass
+subjects:
+  - kind: ServiceAccount
+    name: omsa-http01-traefik
+    namespace: kube-system
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik
+spec:
+  controller: traefik.io/ingress-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omsa-http01-traefik
+  namespace: kube-system
+  labels:
+    app: omsa-http01-traefik
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: omsa-http01-traefik
+  template:
+    metadata:
+      labels:
+        app: omsa-http01-traefik
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: omsa-http01-traefik
+      automountServiceAccountToken: true
+      containers:
+        - name: traefik
+          image: traefik:v3.7.17
+          args:
+            - --providers.kubernetesingress=true
+            - --providers.kubernetesingress.ingressclass=traefik
+            - --providers.kubernetesingress.namespaces=omsa-ledger
+            - --entrypoints.web.address=:80
+            - --ping=true
+            - --ping.entrypoint=web
+            - --log.level=INFO
+          ports:
+            - name: web
+              containerPort: 80
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: web
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: web
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

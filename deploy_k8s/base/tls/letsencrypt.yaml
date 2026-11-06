@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-ip
+  namespace: omsa-ledger
+spec:
+  acme:
+    email: admin@example.ru
+    server: https://acme-v02.api.letsencrypt.org/directory
+    profile: shortlived
+    privateKeySecretRef:
+      name: letsencrypt-ip-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: omsa-nginx-tls
+  namespace: omsa-ledger
+spec:
+  secretName: omsa-nginx-tls
+  ipAddresses:
+    - 85.95.150.8
+  issuerRef:
+    name: letsencrypt-ip
+    kind: Issuer
+    group: cert-manager.io
+  renewBefore: 48h
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-http-redirect
+  namespace: omsa-ledger
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx
+                port:
+                  number: 91
