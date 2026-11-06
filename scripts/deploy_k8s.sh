@@ -116,6 +116,26 @@ restart_pods() {
   wait_ready "${targets[@]}"
 }
 
+wait_webhook_ca() {
+  local attempt ca_bundle validating_bundles mutating_bundles
+  echo "Ожидание синхронизации CA cert-manager webhook"
+  for ((attempt = 0; attempt < 60; attempt++)); do
+    ca_bundle="$(kubectl -n cert-manager get secret cert-manager-webhook-ca \
+      -o 'jsonpath={.data.ca\.crt}' 2>/dev/null || true)"
+    validating_bundles="$(kubectl get validatingwebhookconfiguration cert-manager-webhook \
+      -o 'jsonpath={range .webhooks[*]}{.clientConfig.caBundle}{" "}{end}' 2>/dev/null || true)"
+    mutating_bundles="$(kubectl get mutatingwebhookconfiguration cert-manager-webhook \
+      -o 'jsonpath={range .webhooks[*]}{.clientConfig.caBundle}{" "}{end}' 2>/dev/null || true)"
+    if [[ -n "${ca_bundle}" && "${validating_bundles}" == *"${ca_bundle}"* \
+       && "${mutating_bundles}" == *"${ca_bundle}"* ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "CA cert-manager webhook не синхронизирован за 120 секунд" >&2
+  return 1
+}
+
 ensure_tls_infrastructure() {
   local cert_manager_version="v1.21.3"
   kubectl apply -f "${root_dir}/deploy_k8s/base/namespace.yaml"
@@ -126,6 +146,7 @@ ensure_tls_infrastructure() {
   kubectl -n cert-manager rollout status deployment/cert-manager --timeout="${rollout_timeout}"
   kubectl -n cert-manager rollout status deployment/cert-manager-cainjector --timeout="${rollout_timeout}"
   kubectl -n cert-manager rollout status deployment/cert-manager-webhook --timeout="${rollout_timeout}"
+  wait_webhook_ca
 
   echo "Запрос IP-сертификата Let's Encrypt через внешний TCP 80"
   kubectl apply -f "${root_dir}/deploy_k8s/base/tls/letsencrypt.yaml"
