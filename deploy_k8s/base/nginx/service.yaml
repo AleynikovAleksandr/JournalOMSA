@@ -1,4 +1,4 @@
-# Public app ports are 91, 443, 449, 5600 and 5620. Port 80 is served by the HTTP-01 ingress.
+# Public app ports are 91, 443, 449, 5600 and 5620. Nginx binds host TCP 443 for TLS-ALPN.
 apiVersion: v1
 kind: Service
 metadata:

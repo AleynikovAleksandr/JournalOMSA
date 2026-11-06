@@ -23,4 +23,3 @@ resources:
   - worker
   - beat
   - nginx
-  - tls/letsencrypt.yaml

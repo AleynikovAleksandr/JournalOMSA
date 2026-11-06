@@ -1,4 +1,4 @@
-# Nginx reverse proxy; TLS certificate is issued and renewed by cert-manager.
+# Nginx also runs acme.sh for automatic Let's Encrypt renewal over TLS-ALPN (public TCP 443).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,12 +6,9 @@ metadata:
   labels:
     app: nginx
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 0
+    type: Recreate
   selector:
     matchLabels:
       app: nginx
@@ -32,6 +29,36 @@ spec:
             value: "0"
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: certificate-bootstrap
+          image: registry.example.local/omsa-ledger/nginx:1.28.0
+          imagePullPolicy: Always
+          command:
+            - /bin/sh
+            - -ec
+            - >-
+              mkdir -p /etc/nginx/certs;
+              if [ ! -s /etc/nginx/certs/fullchain.pem ] || [ ! -s /etc/nginx/certs/privkey.pem ]; then
+                openssl req -x509 -nodes -days 1 -newkey rsa:2048 -keyout /etc/nginx/certs/privkey.pem -out /etc/nginx/certs/fullchain.pem -subj "/CN=${HTTPS_HOST}";
+              fi;
+              chmod 600 /etc/nginx/certs/privkey.pem;
+              chmod 644 /etc/nginx/certs/fullchain.pem
+          env:
+            - name: HTTPS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: HTTPS_HOST
+          volumeMounts:
+            - name: certificates
+              mountPath: /etc/nginx/certs
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: nginx
           image: registry.example.local/omsa-ledger/nginx:1.28.0
@@ -54,15 +81,18 @@ spec:
               containerPort: 80
             - name: https
               containerPort: 443
+              hostPort: 443
             - name: web
               containerPort: 5600
             - name: admin
               containerPort: 5620
           readinessProbe:
-            tcpSocket:
-              port: web
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - test -e /run/acme/nginx-paused || test -s /var/run/nginx.pid
             periodSeconds: 5
-            timeoutSeconds: 3
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
@@ -77,33 +107,43 @@ spec:
               readOnly: true
             - name: certificates
               mountPath: /etc/nginx/certs
-              readOnly: true
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d
             - name: nginx-run
               mountPath: /var/run
-        - name: tls-reloader
-          image: registry.example.local/omsa-ledger/nginx:1.28.0
+            - name: acme-control
+              mountPath: /run/acme
+        - name: acme-renewal
+          image: ghcr.io/acmesh-official/acme.sh:3.1.6
           imagePullPolicy: Always
-          command: ["/bin/sh", "-ec"]
-          args:
-            - |
-              fingerprint() { sha256sum /etc/nginx/certs/fullchain.pem /etc/nginx/certs/privkey.pem | sha256sum; }
-              previous="$(fingerprint)"
-              while sleep 15; do
-                current="$(fingerprint)"
-                if [ "$current" != "$previous" ]; then
-                  nginx -t && nginx -s reload
-                  previous="$current"
-                fi
-              done
+          command:
+            - /bin/sh
+            - /scripts/acme-renew.sh
+          env:
+            - name: HTTPS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: HTTPS_HOST
+            - name: ACME_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: ACME_EMAIL
+            - name: ACME_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: omsa-ledger-config
+                  key: ACME_ENABLED
+            - name: HOME
+              value: /acme.sh
           resources:
             requests:
-              cpu: 20m
-              memory: 32Mi
-            limits:
-              cpu: 100m
+              cpu: 50m
               memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
@@ -112,24 +152,28 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: data
+              mountPath: /acme.sh
             - name: certificates
               mountPath: /etc/nginx/certs
-              readOnly: true
             - name: nginx-run
               mountPath: /var/run
+            - name: acme-control
+              mountPath: /run/acme
+            - name: nginx-scripts
+              mountPath: /scripts
+              readOnly: true
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: service-data-nginx
         - name: certificates
-          secret:
-            secretName: omsa-nginx-tls
-            defaultMode: 0440
-            items:
-              - key: tls.crt
-                path: fullchain.pem
-              - key: tls.key
-                path: privkey.pem
+          emptyDir: {}
         - name: nginx-conf
           emptyDir: {}
         - name: nginx-run
+          emptyDir: {}
+        - name: acme-control
           emptyDir: {}
         - name: nginx-config
           configMap:
@@ -138,3 +182,10 @@ spec:
             items:
               - key: nginx.conf.template
                 path: nginx.conf.template
+        - name: nginx-scripts
+          configMap:
+            name: nginx-config
+            defaultMode: 0555
+            items:
+              - key: acme-renew.sh
+                path: acme-renew.sh

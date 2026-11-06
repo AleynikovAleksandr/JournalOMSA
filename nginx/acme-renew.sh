@@ -27,7 +27,7 @@ esac
 : "${HTTPS_HOST:?HTTPS_HOST is required}"
 : "${ACME_EMAIL:?ACME_EMAIL is required}"
 if [ "${ACME_ENABLED:-false}" != true ]; then
-    echo "ACME issuance disabled: external validation ports are unavailable."
+    echo "ACME issuance disabled."
     while :; do sleep 86400; done
 fi
 
@@ -42,13 +42,13 @@ while :; do
     pause_nginx
     if acme.sh --issue --alpn --server letsencrypt \
         --certificate-profile shortlived --days 3 --keylength ec-256 \
-        --pre-hook '/scripts/cert-manager.sh pause' \
+        --pre-hook '/scripts/acme-renew.sh pause' \
         --domain "$HTTPS_HOST" --accountemail "$ACME_EMAIL" \
         --home "$ACME_HOME" --config-home "$LE_CONFIG_HOME"; then
         if acme.sh --install-cert --ecc --domain "$HTTPS_HOST" \
             --key-file /etc/nginx/certs/privkey.pem \
             --fullchain-file /etc/nginx/certs/fullchain.pem \
-            --reloadcmd '/scripts/cert-manager.sh resume' \
+            --reloadcmd '/scripts/acme-renew.sh resume' \
             --home "$ACME_HOME" --config-home "$LE_CONFIG_HOME"; then
             resume_nginx
             break

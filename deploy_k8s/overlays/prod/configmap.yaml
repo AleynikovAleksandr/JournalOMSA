@@ -7,6 +7,8 @@ metadata:
 data:
   # ---- Nginx (nginx/nginx.conf.template) ----
   HTTPS_HOST: "85.95.150.8"
+  ACME_EMAIL: admin@example.ru
+  ACME_ENABLED: "true"
   # Nginx geo entries: сети, которым разрешено управление пользователями (порт 5620)
   ADMIN_ALLOWED_CIDRS: |-
     0.0.0.0/0 1;

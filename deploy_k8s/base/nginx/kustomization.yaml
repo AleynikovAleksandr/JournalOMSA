@@ -9,3 +9,4 @@ configMapGenerator:
   - name: nginx-config
     files:
       - nginx.conf.template=../../../nginx/nginx.conf.template
+      - acme-renew.sh=../../../nginx/acme-renew.sh
