@@ -122,6 +122,11 @@ spec:
           secret:
             secretName: omsa-nginx-tls
             defaultMode: 0440
+            items:
+              - key: tls.crt
+                path: fullchain.pem
+              - key: tls.key
+                path: privkey.pem
         - name: nginx-conf
           emptyDir: {}
         - name: nginx-run
