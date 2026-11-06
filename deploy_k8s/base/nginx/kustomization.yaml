@@ -9,4 +9,3 @@ configMapGenerator:
   - name: nginx-config
     files:
       - nginx.conf.template=../../../nginx/nginx.conf.template
-      - cert-manager.sh=../../../nginx/cert-manager.sh

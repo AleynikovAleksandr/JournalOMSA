@@ -1,4 +1,4 @@
-# Public app ports are 91, 443, 449, 5600 and 5620. Port 443 also serves ACME TLS-ALPN.
+# Public app ports are 91, 443, 449, 5600 and 5620. Port 80 is served by the HTTP-01 ingress.
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,7 +14,7 @@ spec:
     - name: http
       port: 91
       targetPort: http
-    - name: acme-tls
+    - name: https
       port: 443
       targetPort: https
     - name: https-alt

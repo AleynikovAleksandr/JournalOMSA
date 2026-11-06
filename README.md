@@ -133,9 +133,9 @@ PostgreSQL выполняет файл один раз — при первом �
    ```
 
 2. Указать теги образов в `deploy_k8s/overlays/prod/patches/image-tag.yaml`, настройки приложения —
-   в `secret.yaml` (раздел «Секреты»), IP-адрес, ACME e-mail, разрешённые сети админки и параметры
+   в `secret.yaml` (раздел «Секреты»), IP-адрес и разрешённые сети админки и параметры
    Gunicorn — в `configmap.yaml`.
-3. На одноузловом Kubernetes постоянные данные PostgreSQL, Redis, ACME-состояние и логи находятся
+3. На одноузловом Kubernetes постоянные данные PostgreSQL, Redis и логи находятся
    в `~/JournalOMSA/service_data` на узле: `postgres/`, `redis/`, `nginx/`, `gunicorn/`, `celery/`.
    Kubernetes подключает существующие каталоги через статические PV/PVC без копирования данных;
    в PodSpec используются PVC, поэтому Pod Security `restricted` допускает тома. Настройте резервное
@@ -159,12 +159,15 @@ PostgreSQL выполняет файл один раз — при первом �
    * `stop` уменьшает число подов всех сервисов до нуля: сначала Nginx, затем приложение и
      Celery, последними Redis и PostgreSQL. Тома с данными, Secret и внешний адрес
      балансировщика сохраняются, `start` поднимает всё обратно.
-   * `start` и `restart` всегда перезапускают Nginx вместе с приложением. После изменения
-     `HTTPS_HOST`, `ACME_EMAIL` или `ADMIN_ALLOWED_CIDRS` достаточно запустить `start`.
-     У Nginx один под, поэтому сайт будет недоступен несколько секунд.
-   * Внешний HTTP-порт `91` направлен на внутренний `80` Nginx и перенаправляет на HTTPS `443`.
-     Внешний `443` обслуживает HTTPS и проверку TLS-ALPN Let’s Encrypt для IP-сертификата;
-     `449` остаётся дополнительным HTTPS-портом. Внешний `80` закрыт; порты `5600` и `5620` сохранены.
+   * При `start` устанавливаются cert-manager и HTTP-01 ingress, затем автоматически выпускается
+     и обновляется IP-сертификат Let’s Encrypt. Для проверки сертификата внешний TCP-порт `80`
+     должен быть разрешён в firewall и доступен с интернета. Порт 80 перенаправляет обычные запросы
+     на HTTPS; Nginx использует Secret сертификата и подхватывает обновление без пересборки образа.
+   * Nginx работает в трёх репликах; каждая запрашивает 2 GiB памяти и 500m CPU (лимиты — 4 GiB
+     и 500m CPU). Для IP-сертификата Let’s Encrypt используется профиль `shortlived`, поэтому
+     cert-manager продлевает сертификат автоматически каждые несколько дней.
+   * Внешний порт `91` также перенаправляет HTTP на HTTPS `443`; `449` остаётся дополнительным
+     HTTPS-портом. Порты `5600` и `5620` сохранены.
    * Окружение — второй параметр (`scripts/deploy_k8s.sh start prod`), по умолчанию `prod`.
 
 ### Секреты
@@ -223,8 +226,9 @@ user omsa_app on #<SHA-256 REDIS_PASSWORD> ~* &* +@all -flushall -flushdb -confi
 
 | Порт | Service (LoadBalancer) | Назначение |
 | --- | --- | --- |
+| 80 | Traefik | HTTP-01 для cert-manager; обычные запросы перенаправляются на HTTPS |
 | 91 | nginx | HTTP перенаправляет на HTTPS на внешнем 443 |
-| 443 | nginx | HTTPS приложения и проверка Let’s Encrypt TLS-ALPN |
+| 443 | nginx | HTTPS приложения |
 | 449 | nginx | Дополнительный HTTPS-порт (Service направляет на внутренний порт 443) |
 | 5600 | nginx | HTTPS и WSS: вход и журнал проверок |
 | 5620 | nginx | HTTPS: управление пользователями (ограничение — `ADMIN_ALLOWED_CIDRS`) |
@@ -241,7 +245,7 @@ IP-адрес клиента; `FORWARDED_ALLOW_IPS` — CIDR сети подов
 Параметры приложения описаны схемой Pydantic `backend/app/schemas/settings.py` — имена, типы и
 их проверка, значений в коде нет; `backend/core/config.py` загружает их из окружения.
 Значения для Kubernetes — все в `deploy_k8s/overlays/prod/secret.yaml`.
-В `configmap.yaml` — только параметры Nginx (`HTTPS_HOST`, `ACME_EMAIL`, `ADMIN_ALLOWED_CIDRS`)
+В `configmap.yaml` — только параметры Nginx (`HTTPS_HOST`, `ADMIN_ALLOWED_CIDRS`)
 и Gunicorn (`WEB_CONCURRENCY`, `FORWARDED_ALLOW_IPS`, `GUNICORN_LOG_LEVEL`).
 Файлы `.env`, `secrets/`, `deploy_k8s/overlays/prod/secret.yaml` и
 `deploy_k8s/base/redis/users.acl` в репозиторий не добавляются.

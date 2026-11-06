@@ -21,7 +21,7 @@ class AccessPolicy:
     @staticmethod
     def subjects(principal: Principal) -> list[str]:
         if principal.is_fired:
-            # Уволенный сотрудник — только просмотр (ТЗ, раздел 10)
+            # Уволенный сотрудник может только просматривать свои задачи.
             return [ROLE_AUTHENTICATED]
         return [ROLE_AUTHENTICATED, ROLE_ACTIVE, *sorted(principal.rights)]
 

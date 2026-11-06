@@ -121,6 +121,17 @@
 
   const H = {};
 
+  async function saveFired(id, next) {
+    const saved = toUser(await api.patch('/api/users/' + id + '/fired', { is_fired: next }));
+    // Update only this field so an unrelated, unsaved edit in the open card survives.
+    setState((s) => ({
+      USERS: s.USERS.map((u) => u.id === id ? { ...u, fired: saved.fired } : u),
+      SAVED: s.SAVED.map((u) => u.id === id ? { ...u, fired: saved.fired } : u),
+    }));
+    reloadGroups().catch(() => {});
+    showToast(next ? 'Пользователь отмечен как уволенный' : 'Признак увольнения снят');
+  }
+
 
   H.onToggleArchive = () => {
     const next = !state.showArchive;
@@ -253,19 +264,24 @@
   H.onCredPasswordChange = (e) => patchSel({ password: e.target.value });
   H.onCredFioChange = (e) => patchSel({ fio: e.target.value });
   H.onCredGroupChange = (e) => patchSel({ groupId: Number(e.target.value) });
-  H.onToggleFired = () => { const u = sel(); if (u && !isSystemAdmin(u)) patchSel({ fired: !u.fired }); };
+  H.onToggleFired = async (e) => {
+    if (e) e.stopPropagation();
+    const u = sel();
+    if (!u || u.isNew || isSystemAdmin(u)) return;
+    try {
+      await saveFired(u.id, !u.fired);
+    } catch (err) {
+      showError(err);
+    }
+  };
 
   H.onRowToggleFired = async (e) => {
     e.stopPropagation();
     const id = Number(e.currentTarget.getAttribute('data-id'));
     const u = state.USERS.find((x) => x.id === id);
     if (!u || u.isNew || isSystemAdmin(u)) return;
-    const next = !placedFired(u);
     try {
-      const saved = await api.patch('/api/users/' + id + '/fired', { is_fired: next });
-      commitUser(toUser(saved));
-      reloadGroups().catch(() => {});
-      showToast(next ? 'Отмечен как уволенный' : 'Признак увольнения снят');
+      await saveFired(id, !placedFired(u));
     } catch (err) {
       showError(err);
     }

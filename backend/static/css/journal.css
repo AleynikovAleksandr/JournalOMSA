@@ -366,8 +366,6 @@ table.jr-table { width: 100%; border-collapse: collapse; }
 .jr-table--journal td { font-size: 13px; white-space: nowrap; }
 .jr-table--journal td.col-id { font-size: 12px; color: #7d8187; }
 .jr-table--journal td.col-id,
-.jr-table--journal td:nth-child(3),
-.jr-table--journal td:nth-child(4),
 .jr-table--journal td:nth-child(5),
 .jr-table--tasks td:first-child {
   font-family: var(--font-geist-mono);

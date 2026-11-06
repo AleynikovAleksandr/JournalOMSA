@@ -44,19 +44,11 @@ spec:
         - name: nginx
           resources:
             requests:
-              cpu: 100m
-              memory: 96Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
               cpu: 500m
-              memory: 192Mi
-        - name: certificate-manager
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 250m
-              memory: 128Mi
+              memory: 4Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
