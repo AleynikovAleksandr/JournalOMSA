@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -256,10 +257,11 @@ class UserOut(BaseModel):
     rights: list[str]
     failed_login_attempts: int
     locked_until: datetime | None
+    locked_until_label: str | None
     is_locked: bool  # блокировка действует — по часам сервера
 
     @classmethod
-    def of(cls, user: User, *, is_locked: bool) -> UserOut:
+    def of(cls, user: User, *, is_locked: bool, timezone: ZoneInfo) -> UserOut:
         return cls(
             id=user.id,
             fio=user.fio,
@@ -272,6 +274,7 @@ class UserOut(BaseModel):
             rights=rights_list(effective_user_rules(user)),
             failed_login_attempts=user.failed_login_attempts,
             locked_until=user.locked_until,
+            locked_until_label=user.locked_until.astimezone(timezone).strftime("%H:%M") if user.locked_until else None,
             is_locked=is_locked,
         )
 

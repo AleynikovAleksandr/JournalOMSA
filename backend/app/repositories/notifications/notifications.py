@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects import postgresql
 
 from app.models.journal import JournalRecord
@@ -78,6 +78,20 @@ class NotificationRepository(SqlRepository):
             .order_by(Notification.fire_at, Notification.id)
         )
         return list(self._session.scalars(stmt).unique())
+
+    def assignment_times(self, journal_ids: Sequence[int]) -> dict[int, datetime]:
+        """Время последнего назначения текущей задачи исполнителю."""
+        if not journal_ids:
+            return {}
+        stmt = (
+            select(Notification.journal_id, func.max(Notification.created_at))
+            .where(
+                Notification.journal_id.in_(journal_ids),
+                Notification.kind == NotificationKind.ASSIGNED.value,
+            )
+            .group_by(Notification.journal_id)
+        )
+        return {journal_id: created_at for journal_id, created_at in self._session.execute(stmt)}
 
     def history(self, user_uuid: UUID, *, limit: int = 200) -> list[Notification]:
         stmt = (

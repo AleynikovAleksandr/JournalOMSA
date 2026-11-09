@@ -1,3 +1,37 @@
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+async function reuseWindow(client, payload, target) {
+  let received = false;
+  try {
+    const channel = new MessageChannel();
+    const receipt = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 1200);
+      channel.port1.onmessage = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+    });
+    client.postMessage(payload, [channel.port2]);
+    try { await client.focus(); } catch (_) {}
+    received = await receipt;
+  } catch (_) {}
+  if (received) return true;
+  try {
+    const navigated = await client.navigate(target);
+    if (!navigated) return false;
+    try { await navigated.focus(); } catch (_) {}
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   event.waitUntil((async () => {
@@ -21,7 +55,6 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  if (event.action && event.action !== 'open') return;
   event.waitUntil((async () => {
     const target = new URL(event.notification.data?.url || '/journal', self.location.origin);
     if (target.origin !== self.location.origin || target.pathname !== '/journal') return;
@@ -29,13 +62,25 @@ self.addEventListener('notificationclick', (event) => {
     if (Number.isSafeInteger(notificationId) && notificationId > 0) {
       target.searchParams.set('notification_id', String(notificationId));
     }
+    const payload = {
+      type: 'open-journal-record', url: target.pathname + target.search,
+      recordId: Number(target.searchParams.get('record_id')),
+      notificationId,
+    };
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const journal = windows.find((client) => new URL(client.url).pathname === '/journal');
+    const journal = windows.find((client) => {
+      const path = new URL(client.url).pathname;
+      return path === '/journal' || path.startsWith('/journal/');
+    }) || windows.find((client) => {
+      const path = new URL(client.url).pathname;
+      return path === '/login' || path === '/';
+    });
     if (journal) {
-      await journal.navigate(target.href);
-      await journal.focus();
-    } else {
-      await self.clients.openWindow(target.href);
+      await reuseWindow(journal, payload, target.href);
+      return;
     }
+    let opened = null;
+    try { opened = await self.clients.openWindow(target.href); } catch (_) {}
+    if (opened) await opened.focus();
   })());
 });

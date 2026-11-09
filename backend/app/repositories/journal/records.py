@@ -19,7 +19,7 @@ class JournalRepository(SqlRepository):
             select(JournalRecord)
             .join(JournalRecord.group)
             .join(JournalRecord.solution)
-            .order_by(CheckGroup.check_date, CheckGroup.check_time, JournalRecord.number, JournalRecord.id)
+            .order_by(CheckGroup.check_date, CheckGroup.check_time, CheckGroup.id, JournalRecord.number, JournalRecord.id)
         )
 
     def list(self, flt: JournalFilter) -> list[JournalRecord]:

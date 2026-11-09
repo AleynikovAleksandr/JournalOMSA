@@ -148,12 +148,17 @@ class NotificationScheduler:
         interval = self._config.overdue_interval
         today = now.astimezone(self._config.timezone).date()
         planned: list[PlannedNotification] = []
-        for record in self._uow.journal.active_until(today):
+        records = self._uow.journal.active_until(today)
+        assignment_times = self._uow.notifications.assignment_times([record.id for record in records])
+        for record in records:
             moment = self.moment(record)
-            if now < moment + interval:
+            # Если задачу назначили уже после её времени проверки, первый сигнал
+            # всё равно должен подождать полный интервал после назначения.
+            anchor = max(moment, assignment_times.get(record.id, moment))
+            if now < anchor + interval:
                 continue
-            periods = (now - moment) // interval
-            fire_at = moment + periods * interval
+            periods = (now - anchor) // interval
+            fire_at = anchor + periods * interval
             planned.append(PlannedNotification(record.id, record.executor.uuid, NotificationKind.OVERDUE, fire_at))
         inserted = self._save(planned, now)
         if inserted:

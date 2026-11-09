@@ -166,7 +166,7 @@ class JournalService:
     # ------------------------------------------------------------------
     # Изменение
     # ------------------------------------------------------------------
-    def create(self, data: JournalRecordInput) -> JournalRecord:
+    def create(self, data: JournalRecordInput, *, commit: bool = True) -> JournalRecord:
         if not self._rules.can_create(data.executor_id):
             raise PermissionDenied(NO_RIGHTS)
         category, category_name, organization, type_check = self._references(data)
@@ -188,7 +188,8 @@ class JournalService:
         self._uow.flush()
         if not solution.is_final:
             self._scheduler.task_assigned(record)
-        self._uow.commit()
+        if commit:
+            self._uow.commit()
         return record
 
     def update(self, record_id: int, data: JournalRecordInput) -> JournalRecord:

@@ -10,6 +10,7 @@ from flask_wtf.csrf import CSRFProtect
 from app.schemas.settings import Portal, Settings
 from app.services.authentication.portal import PortalConfig
 from app.web.admin_pages import admin_pages
+from app.web.journal_actions import journal_actions
 from app.web.pages import web_pages
 from database.session import configure_flask_database
 
@@ -36,7 +37,7 @@ def create_flask_app(portal: PortalConfig, settings: Settings) -> Flask:
         # Страница журнала открыта весь рабочий день: токен действует, пока жива сессия
         WTF_CSRF_TIME_LIMIT=None,
         WTF_I18N_ENABLED=False,
-        SEND_FILE_MAX_AGE_DEFAULT=3600,
+        SEND_FILE_MAX_AGE_DEFAULT=3600 if settings.is_production else 0,
         TEMPLATES_AUTO_RELOAD=not settings.is_production,
         OMSA_PORTAL=portal.portal.value,
         OMSA_ADMIN_URL=portal.admin_link,
@@ -44,7 +45,11 @@ def create_flask_app(portal: PortalConfig, settings: Settings) -> Flask:
     )
     configure_flask_database(flask_app, settings)
     csrf.init_app(flask_app)
-    flask_app.register_blueprint(web_pages if portal.portal is Portal.WEB else admin_pages)
+    if portal.portal is Portal.WEB:
+        flask_app.register_blueprint(web_pages)
+        flask_app.register_blueprint(journal_actions)
+    else:
+        flask_app.register_blueprint(admin_pages)
 
     @flask_app.context_processor
     def _template_globals() -> dict[str, str]:

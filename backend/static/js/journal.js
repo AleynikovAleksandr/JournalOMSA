@@ -86,23 +86,69 @@
     dataLoaded: false,
     me: null, RIGHTS: {}, adminUrl: '',
     ORG_BY_ID: {}, ORGANIZATIONS: [], EXECUTORS: [], TYPES: [], CATEGORIES: [], STATUSES: [],
-    BLOCKS: [], journal: [],
+    BLOCKS: [], journal: [], tasks: [],
     calendarMonth: null, selectedDateKey: null, todayKey: null,
     selectedBlockId: null, selectedRowId: null, highlightRowId: null,
     searchFio: '', executorFilter: 'all', dateFrom: '', dateTo: '', noDateLimit: true, searchActive: false,
     myTasksOnly: false, completedOnly: false, execDropdownOpen: false,
     timeDropdownOpen: false, draftRecordId: null, mobileMenuOpen: false,
-    openDD: null, categoryFilter: '', openTaskDD: null, taskDDPos: { top: 0, left: 0 },
-    openCal: null, calMonth: new Date(), calPos: { top: 0, left: 0 },
+    openDD: null, ddRowIndex: null, categoryFilter: '', openTaskDD: null, taskDDPos: { top: 0, left: 0 },
+    openCal: null, calRowIndex: null, calMonth: new Date(), calPos: { top: 0, left: 0 },
+    timeRowIndex: null,
     timePos: { top: 0, left: 0 }, ddPos: { top: 0, left: 0, width: 0 },
     orgSearch: '', orgQuery: '', selOrgId: null, orgIsNew: false,
     orgFName: '', orgFAddress: '', orgFPhone: '', orgFContact: '', orgFEmail: '', orgFNote: '',
-    modal: null, saving: false, toasts: [],
+    modal: null, routeModal: null, saving: false, toasts: [],
   };
 
   function setState(patch) {
+    const previousJournalQuery = journalQuery();
+    const previousTasksQuery = tasksQuery();
     Object.assign(state, typeof patch === 'function' ? patch(state) : patch);
+    const newGroupRecordOpen = state.routeModal === 'newBlock' &&
+      state.modal?.type === 'record' && state.modal.isNew;
+    if (state.routeModal && state.modal?.type !== state.routeModal && !newGroupRecordOpen) {
+      state.routeModal = null;
+      window.history.replaceState(null, '', elApp.dataset.journalUrl);
+    }
     render();
+    if (state.dataLoaded && journalQuery() !== previousJournalQuery) queueJournalReload();
+    if (state.dataLoaded && tasksQuery() !== previousTasksQuery) loadTasks().catch(handleError);
+  }
+
+  let nextAttesteeKey = 1;
+  function newAttestee(m) {
+    const s = state;
+    const st = s.STATUSES.find((x) => !x.is_final) || s.STATUSES[0];
+    return {
+      key: nextAttesteeKey++, date: m.date, time: m.time, typeId: m.typeId,
+      typeName: m.typeName, fio: '', categoryId: null,
+      categoryName: '', orgId: null,
+      executorId: null, executorName: '',
+      statusId: st ? st.id : null, statusName: st ? st.name : '', note: '',
+    };
+  }
+  function missingAttesteeFields(row) {
+    return {
+      fio: !(row.fio || '').trim(),
+      org: !row.orgId,
+      category: !row.categoryId && !(row.categoryName || '').trim(),
+      type: !row.typeId,
+      date: !row.date,
+      time: !row.time,
+      exec: !row.executorId,
+      status: !row.statusId,
+    };
+  }
+  function updateAttestee(index, patch) {
+    setState((s) => ({ modal: { ...s.modal, activeAttesteeIndex: index,
+      attendees: s.modal.attendees.map((row, i) => i === index ? { ...row, ...patch } : row) } }));
+  }
+  function activeAttesteeIndex(target) {
+    if (target.hasAttribute('data-row')) return Number(target.getAttribute('data-row'));
+    const m = state.modal;
+    if (m?.type === 'newBlock' && m.step === 'attendees' && m.attendees[m.activeAttesteeIndex]) return m.activeAttesteeIndex;
+    return null;
   }
 
   
@@ -143,13 +189,63 @@
     applyOrganizations(orgs);
   }
 
+  function journalQuery() {
+    const params = new URLSearchParams();
+    if (state.searchActive) {
+      if (state.searchFio.trim()) params.set('fio', state.searchFio.trim());
+      if (state.executorFilter !== 'all') params.set('executor_id', state.executorFilter);
+      if (!state.noDateLimit) {
+        if (state.dateFrom) params.set('date_from', state.dateFrom);
+        if (state.dateTo) params.set('date_to', state.dateTo);
+      }
+    } else if (state.selectedDateKey) {
+      params.set('date_from', state.selectedDateKey);
+      params.set('date_to', state.selectedDateKey);
+    }
+    return '/api/journal?' + params.toString();
+  }
+
+  function tasksQuery() {
+    return '/api/journal?completed=' + state.completedOnly + (state.myTasksOnly ? '&my=true' : '');
+  }
+
+  let journalReloadTimer = null;
+  let journalRequestVersion = 0;
+  let tasksRequestVersion = 0;
+
+  function queueJournalReload() {
+    clearTimeout(journalReloadTimer);
+    const version = ++journalRequestVersion;
+    journalReloadTimer = setTimeout(() => loadJournal(version).catch(handleError), 180);
+  }
+
+  async function loadJournal(version = ++journalRequestVersion) {
+    const query = journalQuery();
+    const rows = await api.get(query);
+    if (version === journalRequestVersion && query === journalQuery()) {
+      setState({ journal: rows.map(toRow) });
+    }
+  }
+
+  async function loadTasks(version = ++tasksRequestVersion) {
+    const query = tasksQuery();
+    const rows = await api.get(query);
+    if (version === tasksRequestVersion && query === tasksQuery()) {
+      setState({ tasks: rows.map(toRow) });
+    }
+  }
+
   async function reloadData() {
-    const [groups, rows] = await Promise.all([api.get('/api/groups'), api.get('/api/journal')]);
-    setState({ BLOCKS: groups.map(toBlock), journal: rows.map(toRow) });
+    clearTimeout(journalReloadTimer);
+    const [groups] = await Promise.all([api.get('/api/groups'), loadJournal(), loadTasks()]);
+    setState({ BLOCKS: groups.map(toBlock) });
   }
 
   function replaceRow(row) {
-    setState((s) => ({ journal: s.journal.map((r) => (r.id === row.id ? row : r)) }));
+    setState((s) => ({
+      journal: s.journal.map((r) => (r.id === row.id ? row : r)),
+      tasks: s.tasks.map((r) => (r.id === row.id ? row : r)),
+    }));
   }
 
   
@@ -162,25 +258,26 @@
       return;
     }
     const todayKey = OMSA.time.appToday();
+    setState({ calendarMonth: monthOf(todayKey), selectedDateKey: todayKey, todayKey });
     try {
       await loadReferences();
       await reloadData();
     } catch (e) {
       showToast(e.message || 'Не удалось загрузить данные');
     }
-    setState({
-      dataLoaded: true,
-      calendarMonth: monthOf(todayKey),
-      selectedDateKey: todayKey, todayKey,
-    });
-    const recordId = Number(new URLSearchParams(window.location.search).get('record_id'));
+    setState({ dataLoaded: true });
+    const urlParams = new URLSearchParams(window.location.search);
+    const recordId = Number(urlParams.get('record_id'));
     if (Number.isSafeInteger(recordId) && recordId > 0) {
-      const notificationId = Number(new URLSearchParams(window.location.search).get('notification_id'));
+      const notificationId = Number(urlParams.get('notification_id'));
       window.history.replaceState(null, '', '/journal');
-      const opened = await openRecordById(recordId);
-      if (opened && Number.isSafeInteger(notificationId) && notificationId > 0) {
-        await notifications.ack({ id: notificationId });
-      }
+      await openNotificationRecord(recordId, notificationId);
+    } else if (elApp.dataset.initialModal === 'newBlock') {
+      H.onNewGroupMenu();
+      if (state.modal?.type === 'newBlock') state.routeModal = 'newBlock';
+    } else if (elApp.dataset.initialModal === 'references') {
+      H.onReferences();
+      if (state.modal?.type === 'references') state.routeModal = 'references';
     }
     notifications.start();
     setInterval(() => {
@@ -224,41 +321,23 @@
     return cells;
   }
 
-  function getFilteredJournal() {
-    const s = state;
-    let rows = s.journal;
-    if (s.searchActive) {
-      if (s.searchFio.trim()) {
-        const q = s.searchFio.trim().toLowerCase();
-        rows = rows.filter((r) => r.fio.toLowerCase().includes(q));
-      }
-      if (s.executorFilter !== 'all') rows = rows.filter((r) => r.executorId === Number(s.executorFilter));
-      if (!s.noDateLimit) {
-        if (s.dateFrom) rows = rows.filter((r) => r.date >= s.dateFrom);
-        if (s.dateTo) rows = rows.filter((r) => r.date <= s.dateTo);
-      }
-    } else {
-      rows = rows.filter((r) => r.date === s.selectedDateKey);
-      if (s.selectedBlockId) rows = rows.filter((r) => r.blockId === s.selectedBlockId);
+  function getVisibleJournal() {
+    if (!state.searchActive && state.selectedBlockId) {
+      return state.journal.filter((r) => r.blockId === state.selectedBlockId);
     }
-    return rows;
+    return state.journal;
   }
 
-  function getTasks() {
-    const s = state;
-    return s.journal
-      .filter((r) => (s.completedOnly ? r.statusFinal : !r.statusFinal))
-      .filter((r) => (s.myTasksOnly ? r.executorId === myId() : true));
+  function findRow(id) {
+    return state.journal.find((r) => r.id === id) || state.tasks.find((r) => r.id === id) || null;
   }
-
-  function findRow(id) { return state.journal.find((r) => r.id === id) || null; }
   function getSelectedRow() { return findRow(state.selectedRowId); }
   function getSelectedOrg() { const row = getSelectedRow(); return row ? state.ORG_BY_ID[row.orgId] : null; }
 
   let toastSeq = 0;
-  function showToast(msg) {
+  function showToast(msg, kind = '') {
     const id = ++toastSeq;
-    setState((s) => ({ toasts: [...s.toasts, { id, msg }].slice(-3) }));
+    setState((s) => ({ toasts: [...s.toasts, { id, msg, kind }].slice(-3) }));
     setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 3000);
   }
 
@@ -343,7 +422,6 @@
     if (!row) {
       try {
         row = toRow(await api.get('/api/journal/' + id));
-        setState((s) => ({ journal: s.journal.some((item) => item.id === row.id) ? s.journal : [...s.journal, row] }));
       } catch (e) { handleError(e); return false; }
     }
     const day = parseKey(row.date);
@@ -352,9 +430,37 @@
       highlightRowId: row.id, searchActive: false,
       calendarMonth: new Date(day.getFullYear(), day.getMonth(), 1),
     });
+    clearTimeout(journalReloadTimer);
+    try {
+      await loadJournal();
+    } catch (e) { handleError(e); return false; }
     const target = document.querySelector('[data-mk="r' + row.id + '"]');
-    if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!target) return false;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return true;
+  }
+
+  async function openNotificationRecord(recordId, notificationId) {
+    const opened = await openRecordById(recordId);
+    if (opened && Number.isSafeInteger(notificationId) && notificationId > 0) {
+      await notifications.ack({ id: notificationId });
+    }
+  }
+
+  function onNotificationMessage(event) {
+    const data = event.data;
+    const recordId = Number(data?.recordId);
+    if (data?.type !== 'open-journal-record' || !Number.isSafeInteger(recordId) || recordId <= 0) return;
+    const target = new URL(data.url, window.location.origin);
+    if (target.origin !== window.location.origin || target.pathname !== elApp.dataset.journalUrl) return;
+    if (event.ports[0]) event.ports[0].postMessage('received');
+    if (!state.dataLoaded) {
+      window.history.replaceState(null, '', target.pathname + target.search);
+      return;
+    }
+    if (state.modal) H.onCloseModal();
+    window.history.replaceState(null, '', elApp.dataset.journalUrl);
+    openNotificationRecord(recordId, Number(data.notificationId)).catch(handleError);
   }
 
   
@@ -393,16 +499,20 @@
     const cal = e.currentTarget.getAttribute('data-cal');
     if (e.currentTarget.disabled) return;
     const s = state;
-    const cur = cal === 'from' ? s.dateFrom : cal === 'to' ? s.dateTo : (s.modal && s.modal.date);
+    const rowIndex = activeAttesteeIndex(e.currentTarget);
+    const cur = cal === 'from' ? s.dateFrom : cal === 'to' ? s.dateTo :
+      rowIndex != null ? s.modal.attendees[rowIndex].date : (s.modal && s.modal.date);
     const base = parseKey(cur || s.todayKey);
     const rect = e.currentTarget.getBoundingClientRect();
     const w = 266;
     const top = rect.bottom + 6;
     const left = Math.min(Math.max(8, rect.left), window.innerWidth - w - 8);
     setState({
-      openCal: s.openCal === cal ? null : cal,
+      openCal: s.openCal === cal && s.calRowIndex === rowIndex ? null : cal,
+      calRowIndex: rowIndex,
       calMonth: new Date(base.getFullYear(), base.getMonth(), 1),
       calPos: { top, left }, openDD: null, timeDropdownOpen: false,
+      ...(s.modal?.type === 'newBlock' && rowIndex != null ? { modal: { ...s.modal, activeAttesteeIndex: rowIndex } } : {}),
     });
   };
   H.onCloseCal = () => setState({ openCal: null });
@@ -414,7 +524,13 @@
     const cal = state.openCal;
     if (cal === 'from') setState({ dateFrom: key, searchActive: true, noDateLimit: false, openCal: null });
     else if (cal === 'to') setState({ dateTo: key, searchActive: true, noDateLimit: false, openCal: null });
-    else setState((s) => ({ modal: { ...s.modal, date: key }, openCal: null }));
+    else if (state.calRowIndex != null && state.modal?.type === 'newBlock') {
+      updateAttestee(state.calRowIndex, { date: key });
+      setState({ openCal: null, calRowIndex: null });
+    } else if (state.modal?.type === 'newBlock') {
+      setState((s) => ({ modal: { ...s.modal, date: key } }));
+      setState({ openCal: null, calRowIndex: null });
+    } else setState((s) => ({ modal: { ...s.modal, date: key }, openCal: null, calRowIndex: null }));
   };
 
   
@@ -440,6 +556,7 @@
     try {
       const saved = await api.patch('/api/journal/' + id + '/status', { solution_id: statusId, version: row.version });
       replaceRow(toRow(saved));
+      reloadData().catch(handleError);
       showToast('Статус обновлён');
     } catch (err) {
       handleError(err);
@@ -468,14 +585,17 @@
   H.onOpenDD = (e) => {
     if (e.currentTarget.disabled) return;
     const dd = e.currentTarget.getAttribute('data-dd');
+    const rowIndex = activeAttesteeIndex(e.currentTarget);
     const rect = e.currentTarget.getBoundingClientRect();
     setState((s) => ({
-      openDD: s.openDD === dd ? null : dd,
+      openDD: s.openDD === dd && s.ddRowIndex === rowIndex ? null : dd,
+      ddRowIndex: rowIndex,
       ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width },
       timeDropdownOpen: false, openCal: null,
+      ...(s.modal?.type === 'newBlock' && rowIndex != null ? { modal: { ...s.modal, activeAttesteeIndex: rowIndex } } : {}),
     }));
   };
-  H.onCloseDD = () => setState({ openDD: null });
+  H.onCloseDD = () => setState({ openDD: null, ddRowIndex: null });
   H.onPickDD = (e) => {
     const field = e.currentTarget.getAttribute('data-field');
     const val = Number(e.currentTarget.getAttribute('data-val'));
@@ -490,21 +610,35 @@
     }
     if (field === 'typeId') patch.typeName = nameById(state.TYPES, val);
     if (field === 'statusId') patch.statusName = nameById(state.STATUSES, val);
-    setState((s) => ({ modal: { ...s.modal, ...patch }, openDD: null }));
+    if (state.modal?.type === 'newBlock' && state.ddRowIndex != null) {
+      updateAttestee(state.ddRowIndex, patch);
+      setState({ openDD: null, ddRowIndex: null });
+    } else if (state.modal?.type === 'newBlock' && field === 'typeId') {
+      setState((s) => ({ modal: { ...s.modal, typeId: val, typeName: patch.typeName }, openDD: null, ddRowIndex: null }));
+    } else setState((s) => ({ modal: { ...s.modal, ...patch }, openDD: null, ddRowIndex: null }));
   };
 
   H.onRecordCategoryClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    setState({
-      openDD: 'cat', categoryFilter: '',
+    const rowIndex = e.currentTarget.hasAttribute('data-row') ? Number(e.currentTarget.getAttribute('data-row')) : null;
+    setState((s) => ({
+      openDD: 'cat', ddRowIndex: rowIndex, categoryFilter: '',
       ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width },
-    });
+      ...(s.modal?.type === 'newBlock' && rowIndex != null ? { modal: { ...s.modal, activeAttesteeIndex: rowIndex } } : {}),
+    }));
   };
   H.onRecordCategoryInput = (e) => {
     const value = e.target.value;
     const normalized = value.trim().toLocaleLowerCase();
     const match = state.CATEGORIES.find((item) => item.name.trim().toLocaleLowerCase() === normalized);
     const rect = e.target.getBoundingClientRect();
+    const rowIndex = e.target.hasAttribute('data-row') ? Number(e.target.getAttribute('data-row')) : null;
+    if (state.modal?.type === 'newBlock' && rowIndex != null) {
+      updateAttestee(rowIndex, { categoryId: match ? match.id : null, categoryName: match ? match.name : value });
+      setState({ openDD: 'cat', ddRowIndex: rowIndex, categoryFilter: value,
+        ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width } });
+      return;
+    }
     setState((s) => ({
       modal: { ...s.modal, categoryId: match ? match.id : null, categoryName: match ? match.name : value },
       openDD: 'cat', categoryFilter: value,
@@ -515,51 +649,148 @@
   H.onToggleTimeDropdown = (e) => {
     if (e.currentTarget.disabled) return;
     const rect = e.currentTarget.getBoundingClientRect();
+    const rowIndex = activeAttesteeIndex(e.currentTarget);
     setState((s) => ({
-      timeDropdownOpen: !s.timeDropdownOpen, openDD: null, openCal: null,
+      timeDropdownOpen: s.timeRowIndex === rowIndex ? !s.timeDropdownOpen : true,
+      timeRowIndex: rowIndex, openDD: null, openCal: null,
       timePos: { top: rect.bottom + 6, left: rect.left },
+      ...(s.modal?.type === 'newBlock' && rowIndex != null ? { modal: { ...s.modal, activeAttesteeIndex: rowIndex } } : {}),
     }));
   };
   H.onCloseTimeDropdown = () => setState({ timeDropdownOpen: false });
   H.onPickHour = (e) => {
     const h = e.currentTarget.getAttribute('data-h');
-    setState((s) => ({ modal: { ...s.modal, time: h + ':' + (s.modal.time || '00:00').split(':')[1] } }));
+    if (state.modal?.type === 'newBlock' && state.timeRowIndex != null) {
+      const row = state.modal.attendees[state.timeRowIndex];
+      updateAttestee(state.timeRowIndex, { time: h + ':' + (row.time || '00:00').split(':')[1] });
+    } else if (state.modal?.type === 'newBlock') {
+      setState((s) => ({ modal: { ...s.modal, time: h + ':' + (s.modal.time || '00:00').split(':')[1] } }));
+    } else setState((s) => ({ modal: { ...s.modal, time: h + ':' + (s.modal.time || '00:00').split(':')[1] } }));
   };
   H.onPickMinute = (e) => {
     const m = e.currentTarget.getAttribute('data-m');
-    setState((s) => ({ modal: { ...s.modal, time: (s.modal.time || '00:00').split(':')[0] + ':' + m }, timeDropdownOpen: false }));
+    if (state.modal?.type === 'newBlock' && state.timeRowIndex != null) {
+      const row = state.modal.attendees[state.timeRowIndex];
+      updateAttestee(state.timeRowIndex, { time: (row.time || '00:00').split(':')[0] + ':' + m });
+      setState({ timeDropdownOpen: false, timeRowIndex: null });
+    } else if (state.modal?.type === 'newBlock') {
+      setState((s) => ({ modal: { ...s.modal, time: (s.modal.time || '00:00').split(':')[0] + ':' + m }, timeDropdownOpen: false }));
+    } else setState((s) => ({ modal: { ...s.modal, time: (s.modal.time || '00:00').split(':')[0] + ':' + m }, timeDropdownOpen: false }));
   };
 
   
   H.onNewGroupMenu = () => {
     if (isFired() || !state.RIGHTS.grpAdd) return;
     const t0 = state.TYPES[0];
-    setState({ modal: { type: 'newBlock', date: state.selectedDateKey, time: '09:00', typeId: t0 ? t0.id : null, typeName: t0 ? t0.name : '' } });
+    const modal = { type: 'newBlock', step: 'group', date: state.selectedDateKey, time: '09:00',
+      typeId: t0 ? t0.id : null, typeName: t0 ? t0.name : '', attendees: [], activeAttesteeIndex: null,
+      validationAttempted: false,
+      appliedDefaults: null };
+    setState({ modal });
   };
+  H.onNextNewGroup = () => {
+    const m = state.modal;
+    if (!m?.date || !m.time || !m.typeId) {
+      showToast('Укажите дату, время и вид проверки');
+      return;
+    }
+    setState((s) => {
+      const current = s.modal;
+      const previous = current.appliedDefaults;
+      const attendees = current.attendees.length ? current.attendees.map((row) => {
+        if (!previous) return row;
+        const patch = {};
+        if (row.date === previous.date) patch.date = current.date;
+        if (row.time === previous.time) patch.time = current.time;
+        if (row.typeId === previous.typeId) { patch.typeId = current.typeId; patch.typeName = current.typeName; }
+        return { ...row, ...patch };
+      }) : [newAttestee(current)];
+      return { modal: { ...current, step: 'attendees', attendees,
+        activeAttesteeIndex: current.activeAttesteeIndex ?? 0,
+        appliedDefaults: { date: current.date, time: current.time, typeId: current.typeId } } };
+    });
+  };
+  H.onBackNewGroup = () => setState((s) => ({ modal: { ...s.modal, step: 'group' },
+    openCal: null, openDD: null, timeDropdownOpen: false }));
   H.onSaveNewBlock = async () => {
     const m = state.modal;
-    if (!m || state.saving) return;
+    if (!m || state.saving || (m.step === 'group' && canCreateRecords())) return;
+    const rows = m.attendees || [];
+    if (rows.some((row) => Object.values(missingAttesteeFields(row)).some(Boolean))) {
+      setState((s) => ({ modal: { ...s.modal, validationAttempted: true } }));
+      showToast('Заполните все обязательные поля ввода', 'validation');
+      return;
+    }
     setState({ saving: true });
     try {
-      const group = await api.post('/api/groups', { date: m.date, time: m.time, type_check_id: m.typeId, type_check_name: m.typeName });
-      const block = toBlock(group);
+      const result = await api.post('/api/groups/with-records', {
+        group: { date: m.date, time: m.time,
+          type_check_id: m.typeId, type_check_name: m.typeName },
+        records: rows.map((row) => ({ date: row.date, time: row.time, type_check_id: row.typeId,
+          type_check_name: row.typeName, fio: row.fio, category_id: row.categoryId,
+          category_name: row.categoryName, organization_id: row.orgId, executor_id: row.executorId,
+          solution_id: row.statusId, solution_name: row.statusName, note: row.note || '' })),
+      });
+      const block = toBlock(result.group);
       const day = parseKey(block.date);
       setState((s) => ({
         BLOCKS: [...s.BLOCKS, block], selectedDateKey: block.date, searchActive: false, saving: false,
         calendarMonth: new Date(day.getFullYear(), day.getMonth(), 1),
       }));
-      if (canCreateRecords()) {
-        openRecordDraft(block);
-        showToast('Группа создана — заполните карточку записи');
-      } else {
-        setState({ modal: null });
-        showToast('Группа создана');
-      }
+      await reloadData();
+      setState({ modal: null, selectedRowId: result.records.length ? result.records[0].id : null });
+      showToast(result.records.length ? 'Группа и аттестуемые сохранены' : 'Группа создана');
     } catch (err) {
       setState({ saving: false });
       handleError(err);
     }
   };
+  H.onAddAttestee = () => setState((s) => {
+    const previous = s.modal.attendees[s.modal.attendees.length - 1] || s.modal;
+    return { modal: { ...s.modal, attendees: [...s.modal.attendees, newAttestee(previous)],
+      activeAttesteeIndex: s.modal.attendees.length } };
+  });
+  function selectAttestee(index) {
+    const m = state.modal;
+    if (m?.type !== 'newBlock' || m.step !== 'attendees' || !m.attendees[index] || m.activeAttesteeIndex === index) return;
+    const rows = elModalRoot.querySelectorAll('.attestee-table tbody tr');
+    const previous = rows[m.activeAttesteeIndex];
+    const current = rows[index];
+    if (previous) { previous.classList.remove('is-selected'); previous.setAttribute('aria-selected', 'false'); }
+    if (current) { current.classList.add('is-selected'); current.setAttribute('aria-selected', 'true'); }
+    m.activeAttesteeIndex = index;
+    const controls = elModalRoot.querySelector('.new-group-defaults');
+    const attendee = m.attendees[index];
+    if (!controls) return;
+    const missing = m.validationAttempted ? missingAttesteeFields(attendee) : {};
+    const dateButton = controls.querySelector('[data-cal="record"]');
+    const timeButton = controls.querySelector('[data-click="onToggleTimeDropdown"]');
+    const typeButton = controls.querySelector('[data-dd="vtype"]');
+    dateButton.querySelector('span').textContent = attendee.date ? formatDateRu(attendee.date) : 'Выберите дату';
+    timeButton.querySelector('span').textContent = attendee.time || '00:00';
+    typeButton.querySelector('span').textContent = nameById(state.TYPES, attendee.typeId);
+    dateButton.classList.toggle('attestee-invalid', !!missing.date);
+    timeButton.classList.toggle('attestee-invalid', !!missing.time);
+    typeButton.classList.toggle('attestee-invalid', !!missing.type);
+  }
+  H.onSelectAttestee = (e) => {
+    const index = Number(e.currentTarget.getAttribute('data-row'));
+    selectAttestee(index);
+  };
+  H.onRemoveAttestee = (e) => {
+    e.stopPropagation();
+    const index = Number(e.currentTarget.getAttribute('data-row'));
+    setState((s) => {
+      const attendees = s.modal.attendees.filter((_, i) => i !== index);
+      const selected = s.modal.activeAttesteeIndex;
+      const activeAttesteeIndex = attendees.length === 0 ? null :
+        selected === index ? Math.min(index, attendees.length - 1) : selected > index ? selected - 1 : selected;
+      return { modal: { ...s.modal, attendees, activeAttesteeIndex },
+        openDD: null, ddRowIndex: null, openCal: null, calRowIndex: null, timeDropdownOpen: false };
+    });
+  };
+  H.onAttesteeFioChange = (e) => updateAttestee(Number(e.target.getAttribute('data-row')), { fio: e.target.value });
+  H.onAttesteeNoteChange = (e) => updateAttestee(Number(e.target.getAttribute('data-row')), { note: e.target.value });
 
   
   H.onSelectRowClick = (e) => setState({ selectedRowId: Number(e.currentTarget.getAttribute('data-id')), highlightRowId: null });
@@ -578,6 +809,7 @@
       await api.del('/api/journal/' + id);
       setState((s) => ({
         journal: s.journal.filter((r) => r.id !== id),
+        tasks: s.tasks.filter((r) => r.id !== id),
         selectedRowId: s.selectedRowId === id ? null : s.selectedRowId,
       }));
       showToast('Запись удалена');
@@ -634,8 +866,11 @@
       }
       releaseLock();
       const row = toRow(saved);
+      const day = parseKey(row.date);
+      setState({ selectedDateKey: row.date, searchActive: false,
+        calendarMonth: new Date(day.getFullYear(), day.getMonth(), 1) });
       await reloadData();
-      setState({ modal: null, draftRecordId: null, saving: false, selectedRowId: row.id, selectedDateKey: row.date, searchActive: false });
+      setState({ modal: null, draftRecordId: null, saving: false, selectedRowId: row.id });
       showToast('Запись сохранена');
     } catch (err) {
       setState({ saving: false });
@@ -732,6 +967,19 @@
     const first = state.ORG_BY_ID[state.selOrgId] ? state.selOrgId : (state.ORGANIZATIONS[0] || {}).id;
     loadOrg(first);
   };
+  H.onOpenJournalAction = (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const kind = e.currentTarget.dataset.modal;
+    if (kind !== 'newBlock' && kind !== 'references') return;
+    e.preventDefault();
+    if (state.mobileMenuOpen) setState({ mobileMenuOpen: false });
+    if (kind === 'newBlock') H.onNewGroupMenu();
+    else H.onReferences();
+    if (state.modal?.type === kind) {
+      state.routeModal = kind;
+      window.history.replaceState(null, '', e.currentTarget.href);
+    }
+  };
   H.onLogout = () => { releaseLock(); api.logout(); };
   H.onToggleMobileMenu = () => setState((s) => ({ mobileMenuOpen: !s.mobileMenuOpen }));
   H.onCloseMobileMenu = () => setState({ mobileMenuOpen: false });
@@ -817,7 +1065,8 @@
   function popTimeHtml() {
     const s = state;
     const m = s.modal;
-    const activeTime = m && (m.type === 'newBlock' || m.type === 'record') ? m.time : '00:00';
+    const activeTime = m && m.type === 'newBlock' && s.timeRowIndex != null
+      ? m.attendees[s.timeRowIndex].time : m && (m.type === 'newBlock' || m.type === 'record') ? m.time : '00:00';
     const parts = (activeTime || '00:00').split(':');
     const curH = parts[0], curM = parts[1];
 
@@ -841,14 +1090,16 @@
     let out = '';
 
     if (s.openCal) {
-      const active = s.openCal === 'from' ? s.dateFrom : s.openCal === 'to' ? s.dateTo : (s.modal && s.modal.date);
+      const active = s.openCal === 'from' ? s.dateFrom : s.openCal === 'to' ? s.dateTo :
+        s.modal?.type === 'newBlock' && s.calRowIndex != null ? s.modal.attendees[s.calRowIndex].date : (s.modal && s.modal.date);
       out += popCalHtml(active, 'cal-' + s.openCal);
     }
 
     if (s.timeDropdownOpen) out += popTimeHtml();
 
     if (s.openDD) {
-      const m = s.modal || {};
+      const m = s.modal?.type === 'newBlock' && s.ddRowIndex != null
+        ? s.modal.attendees[s.ddRowIndex] : s.modal || {};
       let opts = [];
       if (s.openDD === 'vtype' || s.openDD === 'type') opts = idOpts(s.TYPES, m.typeId, 'typeId');
       else if (s.openDD === 'cat') {
@@ -902,7 +1153,7 @@
 
   
   function tasksHtml() {
-    return getTasks().map((r, idx) => {
+    return state.tasks.map((r, idx) => {
       const locked = !canChangeStatus(r);
       return '<tr class="jr-row' + (idx % 2 === 1 ? ' is-alt' : '') + '" data-mk="t' + r.id + '"' +
           ' data-id="' + r.id + '" data-dblclick="onTaskDoubleClick">' +
@@ -954,31 +1205,84 @@
 
   
   function modalNewBlockHtml(m) {
-    return '<p class="modal-title">Новая проверочная группа</p>' +
+    const groupStep = m.step === 'group';
+    const selected = groupStep ? m : m.attendees[m.activeAttesteeIndex] || m;
+    const missing = !groupStep && m.validationAttempted && m.attendees[m.activeAttesteeIndex]
+      ? missingAttesteeFields(selected) : {};
+    const fields = '<div class="' + (groupStep ? 'new-group-form-fields' : 'new-group-defaults') + '">' +
       '<div class="field field--rel">' +
         '<span class="field__label">Дата</span>' +
-        '<button class="select-btn select-btn--modal" type="button" data-cal="record" data-click="onOpenCal">' +
-          '<span>' + (m.date ? formatDateRu(m.date) : 'Выберите дату') + '</span>' + ICON.calendar +
+        '<button class="select-btn select-btn--modal' + (missing.date ? ' attestee-invalid' : '') + '" type="button" data-cal="record" data-click="onOpenCal">' +
+          '<span>' + (selected.date ? formatDateRu(selected.date) : 'Выберите дату') + '</span>' + ICON.calendar +
         '</button>' +
       '</div>' +
       '<div class="field field--rel">' +
         '<span class="field__label">Время</span>' +
-        '<button class="select-btn select-btn--modal" type="button" data-click="onToggleTimeDropdown">' +
-          '<span>' + esc(m.time) + '</span>' + ICON.clock +
+        '<button class="select-btn select-btn--modal' + (missing.time ? ' attestee-invalid' : '') + '" type="button" data-click="onToggleTimeDropdown">' +
+          '<span>' + esc(selected.time) + '</span>' + ICON.clock +
         '</button>' +
       '</div>' +
       '<div class="field">' +
         '<span class="field__label">Вид проверки</span>' +
         '<div style="position:relative;">' +
-          '<button class="select-btn select-btn--modal" type="button" data-dd="vtype" data-click="onOpenDD">' +
-            '<span>' + esc(nameById(state.TYPES, m.typeId)) + '</span>' + ICON.chevDown +
+          '<button class="select-btn select-btn--modal' + (missing.type ? ' attestee-invalid' : '') + '" type="button" data-dd="vtype" data-click="onOpenDD">' +
+            '<span>' + esc(nameById(state.TYPES, selected.typeId)) + '</span>' + ICON.chevDown +
           '</button>' +
         '</div>' +
       '</div>' +
-      '<div class="modal-foot">' +
-        '<button class="btn" type="button" data-click="onCloseModal">Отмена</button>' +
-        '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Создать</button>' +
       '</div>';
+    if (groupStep) {
+      return '<p class="modal-title">Новая проверочная группа</p>' + fields +
+        '<div class="modal-foot">' +
+          '<button class="btn" type="button" data-click="onCloseModal">Отмена</button>' +
+          (canCreateRecords()
+            ? '<button class="btn btn--primary" type="button" data-click="onNextNewGroup">Далее</button>'
+            : '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Создать</button>') +
+        '</div>';
+    }
+    return '<p class="modal-title">Новая проверочная группа</p>' +
+      '<p class="modal-sub">Выберите аттестуемого в таблице. Верхние поля изменяют только выбранную строку.</p>' +
+      fields +
+      '<div class="attestee-table-wrap"><table class="attestee-table"><thead><tr>' +
+        '<th>№</th><th>ФИО</th><th>Организация</th><th>Категория</th><th>Вид проверки</th>' +
+        '<th>Дата</th><th>Время</th><th>Исполнитель</th><th>Примечание</th><th>Статус</th><th></th>' +
+      '</tr></thead><tbody>' + m.attendees.map(attesteeRowHtml).join('') + '</tbody></table></div>' +
+      '<button class="attestee-add" type="button" data-click="onAddAttestee">' + ICON.plus + ' Добавить аттестуемого</button>' +
+      '<div class="modal-foot">' +
+        '<button class="btn" type="button" data-click="onBackNewGroup">Назад</button>' +
+        '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Сохранить группу</button>' +
+      '</div>';
+  }
+
+  function attesteeRowHtml(row, index) {
+    const attr = ' data-row="' + index + '"';
+    const org = state.ORG_BY_ID[row.orgId];
+    const missing = state.modal.validationAttempted ? missingAttesteeFields(row) : {};
+    const invalid = (field) => missing[field] ? ' attestee-invalid' : '';
+    const select = (dd, label) => '<button class="select-btn select-btn--modal attestee-select' + invalid(dd) + '" type="button"' +
+      ' data-dd="' + dd + '"' + attr + ' data-click="onOpenDD"><span class="select-btn__text">' + esc(label || '—') + '</span>' + ICON.chevDown + '</button>';
+    const active = state.modal.activeAttesteeIndex === index;
+    return '<tr class="' + (active ? 'is-selected' : '') + '" aria-selected="' + active + '" data-mk="attestee-' + row.key + '"' +
+      attr + ' data-click="onSelectAttestee">' +
+      '<td class="attestee-table__number">' + (index + 1) + '</td>' +
+      '<td><input class="input attestee-input' + invalid('fio') + '" type="text" maxlength="150" placeholder="Новый аттестуемый" value="' + esc(row.fio) + '"' + attr + ' data-input="onAttesteeFioChange"></td>' +
+      '<td>' + select('org', org ? org.name : 'Выберите') + '</td>' +
+      '<td><div class="category-combo"><input class="select-btn select-btn--modal category-combo__input attestee-input' + invalid('category') + '" type="text" maxlength="100" placeholder="Выберите категорию"' +
+        ' value="' + esc(row.categoryName || (row.categoryId ? nameById(state.CATEGORIES, row.categoryId) : '')) + '"' + attr +
+        ' data-input="onRecordCategoryInput" data-click="onRecordCategoryClick">' +
+        '<span class="category-combo__chev" aria-hidden="true">' + ICON.chevDown + '</span></div></td>' +
+      '<td>' + select('type', nameById(state.TYPES, row.typeId)) + '</td>' +
+      '<td><button class="select-btn select-btn--modal attestee-select' + invalid('date') + '" type="button" data-cal="record"' + attr +
+        ' data-click="onOpenCal"><span>' + (row.date ? row.date.split('-').reverse().join('.') : 'Выберите') + '</span>' + ICON.calendar + '</button></td>' +
+      '<td><button class="select-btn select-btn--modal attestee-select' + invalid('time') + '" type="button"' + attr +
+        ' data-click="onToggleTimeDropdown"><span>' + esc(row.time) + '</span>' + ICON.clock + '</button></td>' +
+      '<td>' + select('exec', row.executorName || 'Выберите') + '</td>' +
+      '<td><textarea class="input attestee-note" rows="2" maxlength="250" placeholder="Примечание"' + attr +
+        ' data-input="onAttesteeNoteChange">' + esc(row.note || '') + '</textarea></td>' +
+      '<td>' + select('status', nameById(state.STATUSES, row.statusId)) + '</td>' +
+      '<td><button class="attestee-remove" type="button" title="Убрать аттестуемого" aria-label="Убрать аттестуемого"' +
+        attr + ' data-click="onRemoveAttestee">' + ICON.trash + '</button></td>' +
+    '</tr>';
   }
 
   function modalRecordHtml(m) {
@@ -1155,12 +1459,15 @@
               '<input class="ref-search__input" type="text" placeholder="Поиск по организациям"' +
               ' value="' + esc(s.orgSearch) + '" data-input="onOrgSearchChange" data-keydown="onOrgSearchKeyDown">' +
             '</div>' +
-            '<button class="tool-btn" type="button" title="Добавить организацию" data-click="onOrgAdd">' + ICON.plus + '</button>' +
-            '<button class="tool-btn" type="button" title="Сохранить" data-click="onOrgSave">' + ICON.save + '</button>' +
-            '<button class="tool-btn" type="button" title="Отмена" data-click="onOrgCancel">' + ICON.undo + '</button>' +
-            '<button class="tool-btn" type="button" title="Обновить список" data-click="onOrgRefresh">' + ICON.refresh + '</button>' +
-            '<button class="tool-btn ' + (selOrg ? 'tool-btn--del' : 'tool-btn--off') + '"' +
-            ' type="button" title="Удалить организацию" data-click="onOrgDelete">' + ICON.trash15 + '</button>' +
+            '<div class="ref-toolbar__actions" role="group" aria-label="Действия со справочником организаций">' +
+              '<button class="tool-btn tool-btn--action" type="button" title="Добавить организацию" data-click="onOrgAdd">' + ICON.plus + '<span>Добавить</span></button>' +
+              '<button class="tool-btn tool-btn--action tool-btn--primary" type="button" title="Сохранить" data-click="onOrgSave">' + ICON.save + '<span>Сохранить</span></button>' +
+              '<button class="tool-btn tool-btn--action" type="button" title="Отмена" data-click="onOrgCancel">' + ICON.undo + '<span>Отмена</span></button>' +
+              '<span class="ref-toolbar__spacer"></span>' +
+              '<button class="tool-btn tool-btn--action" type="button" title="Обновить список" data-click="onOrgRefresh">' + ICON.refresh + '<span>Обновить</span></button>' +
+              '<button class="tool-btn tool-btn--action ' + (selOrg ? 'tool-btn--del' : 'tool-btn--off') + '"' +
+              ' type="button" title="Удалить организацию" data-click="onOrgDelete">' + ICON.trash15 + '<span>Удалить</span></button>' +
+            '</div>' +
           '</div>' +
 
           '<div class="ref-table-box">' +
@@ -1206,7 +1513,7 @@
     if (!m) return '';
 
     let inner = '', extraClass = '';
-    if (m.type === 'newBlock') inner = modalNewBlockHtml(m);
+    if (m.type === 'newBlock') { inner = modalNewBlockHtml(m); if (m.step === 'attendees') extraClass = ' jr-modal-card--new-group'; }
     else if (m.type === 'record') { inner = modalRecordHtml(m); extraClass = ' jr-modal-card--record'; }
     else if (m.type === 'note') inner = modalNoteHtml(m);
     else if (m.type === 'org') inner = modalOrgHtml(m);
@@ -1225,7 +1532,7 @@
       list.map((t, idx) => {
         const dist = list.length - 1 - idx;
         const cls = dist === 0 ? '' : dist === 1 ? ' toast--dim1' : ' toast--dim2';
-        return '<div class="toast' + cls + '" data-mk="tst' + t.id + '"><span class="toast__text">' + esc(t.msg) + '</span></div>';
+        return '<div class="toast' + cls + (t.kind === 'validation' ? ' toast--validation' : '') + '" data-mk="tst' + t.id + '"><span class="toast__text">' + esc(t.msg) + '</span></div>';
       }).join('') +
       '</div>';
   }
@@ -1236,8 +1543,8 @@
     const r = state.RIGHTS;
     return '<div class="scrim" data-mk="mscrim" data-click="onCloseMobileMenu"></div>' +
       '<div class="menu-pop" data-mk="mpop">' +
-        (r.grpAdd ? '<button class="menu-item" type="button" data-mk="mnew" data-click="onMobileNewGroup">Новая группа</button>' : '') +
-        (r.menuRefs ? '<button class="menu-item" type="button" data-mk="mref" data-click="onMobileReferences">Справочники</button>' : '') +
+        (r.grpAdd ? '<a class="menu-item menu-item--link" data-mk="mnew" data-modal="newBlock" data-click="onOpenJournalAction" href="' + esc(elNavNewGroup.getAttribute('href')) + '">Новая группа</a>' : '') +
+        (r.menuRefs ? '<a class="menu-item menu-item--link" data-mk="mref" data-modal="references" data-click="onOpenJournalAction" href="' + esc(elNavRefs.getAttribute('href')) + '">Справочники</a>' : '') +
         (r.menuSettings && state.adminUrl ? '<a class="menu-item menu-item--link" data-mk="musers" href="' + esc(state.adminUrl) + '">Управление пользователями</a>' : '') +
       '</div>';
   }
@@ -1262,6 +1569,12 @@
   const elNavNewGroup = el('navNewGroup'), elNavRefs = el('navRefs'), elNavUsers = el('navUsers');
   const elMobileMenu = el('mobileMenu'), elPopovers = el('popovers');
   const elModalRoot = el('modalRoot'), elToastRoot = el('toastRoot');
+
+  elModalRoot.addEventListener('pointerdown', (event) => {
+    const target = event.target;
+    const row = target.closest?.('.attestee-table tbody tr[data-row]');
+    if (row && !target.closest('.attestee-remove')) selectAttestee(Number(row.getAttribute('data-row')));
+  }, true);
 
   function setRadio(node, on) {
     node.classList.toggle('is-on', on);
@@ -1337,11 +1650,11 @@
     elOrgEmail.textContent = org && org.email ? org.email : '—';
 
     
-    const tasks = getTasks();
+    const tasks = s.tasks;
     patchRows(elTasksBody, tasksHtml());
     elTasksEmpty.hidden = tasks.length > 0;
 
-    const journalRows = getFilteredJournal();
+    const journalRows = getVisibleJournal();
     elThDelete.hidden = isFired() || !r.jrnDel;
     patchRows(elJournalBody, journalHtml(journalRows));
     elJournalEmpty.hidden = journalRows.length > 0;
@@ -1358,11 +1671,9 @@
   
 
 
-  const notifications = new OMSA.NotificationCenter(api, {
-    root: el('notifyRoot'),
-    onOpen: (journalId) => openRecordById(journalId),
-  });
+  const notifications = new OMSA.NotificationCenter(api);
 
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', onNotificationMessage);
   bindEvents(document);
   bootstrap();
 })();

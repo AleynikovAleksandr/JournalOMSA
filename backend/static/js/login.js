@@ -18,10 +18,21 @@
       };
       this.state = { login: '', password: '', passVisible: false, error: '', busy: false };
       this.redirectTo = this.form.getAttribute('data-redirect');
+      try {
+        const returnTo = this.window.sessionStorage.getItem('omsa-login-return-to');
+        if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) this.redirectTo = returnTo;
+      } catch (error) {}
       this.askNotifications = this.form.getAttribute('data-notifications') === 'on';
       this.csrf = (this.document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
       this.bindEvents();
+      if (this.window.navigator?.serviceWorker) {
+        this.window.navigator.serviceWorker.addEventListener('message', (event) => this.onNotificationMessage(event));
+        if (this.askNotifications) {
+          this.window.navigator.serviceWorker.register('/notification-sw.js', { scope: '/' })
+            .then((registration) => registration.update()).catch(() => {});
+        }
+      }
       this.render();
       this.initBackground();
       this.elements.login.focus();
@@ -76,6 +87,19 @@
       this.setState((state) => ({ passVisible: !state.passVisible }));
     }
 
+    onNotificationMessage(event) {
+      const data = event.data;
+      if (data?.type !== 'open-journal-record') return;
+      let target;
+      try { target = new URL(data.url, this.window.location.origin); } catch (error) { return; }
+      const recordId = Number(target.searchParams.get('record_id'));
+      if (target.origin !== this.window.location.origin || target.pathname !== '/journal' ||
+          !Number.isSafeInteger(recordId) || recordId <= 0) return;
+      this.redirectTo = target.pathname + target.search;
+      try { this.window.sessionStorage.setItem('omsa-login-return-to', this.redirectTo); } catch (error) {}
+      if (event.ports[0]) event.ports[0].postMessage('received');
+    }
+
     async onSubmit(event) {
       event.preventDefault();
       if (this.state.busy) return;
@@ -105,6 +129,7 @@
         await this.requestNotificationPermission();
         try {
           this.window.sessionStorage.setItem('omsa-show-loading-after-login', '1');
+          this.window.sessionStorage.removeItem('omsa-login-return-to');
         } catch (error) {
           // Storage may be disabled; login still continues without the transition screen.
         }
@@ -130,10 +155,6 @@
     }
 
     errorText(data) {
-      const until = data.code === 'account_locked' && data.errors && data.errors.locked_until;
-      if (until) {
-        return 'Учётная запись временно заблокирована до ' + this.window.OMSA.time.time(until);
-      }
       return data.detail || 'Неверный логин или пароль';
     }
 

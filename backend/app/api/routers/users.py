@@ -20,7 +20,7 @@ groups_router = APIRouter(prefix="/user-groups", tags=["Группы польз�
 def _user_out(container: Container, user: User) -> UserOut:
     """Действует ли блокировка входа, решает сервер — по своим часам и тому же правилу, что при входе."""
     locked = container.lock_policy.active_lock(user, container.clock.now()) is not None
-    return UserOut.of(user, is_locked=locked)
+    return UserOut.of(user, is_locked=locked, timezone=container.settings.timezone)
 
 
 @router.get("", response_model=list[UserOut])

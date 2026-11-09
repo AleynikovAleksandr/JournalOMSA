@@ -50,7 +50,7 @@ class CheckGroupService:
             raise ValidationFailed("Вид проверки не найден", details={"type_check_id": ["Укажите значение"]})
         return type_check
 
-    def create(self, data: CheckGroupInput) -> CheckGroup:
+    def create(self, data: CheckGroupInput, *, commit: bool = True) -> CheckGroup:
         self._policy.require(self._principal, "groups", "create", NO_RIGHTS)
         group = CheckGroup(
             check_date=data.check_date,
@@ -58,7 +58,10 @@ class CheckGroupService:
             type_check=self._type_check(data.type_check_id, data.type_check_name),
         )
         self._uow.groups.add(group)
-        self._uow.commit()
+        if commit:
+            self._uow.commit()
+        else:
+            self._uow.flush()
         return group
 
     def update(self, group_id: int, data: CheckGroupInput) -> CheckGroup:

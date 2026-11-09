@@ -18,7 +18,7 @@
   const toUser = (u) => ({
     id: u.id, groupId: u.group_id, fio: u.fio, profile: u.profile || '', login: u.login,
     password: '', fired: u.is_fired, rights: rightsMap(u.rights),
-    lockedUntil: u.locked_until, isLocked: u.is_locked, isNew: false,
+    lockedUntilLabel: u.locked_until_label, isLocked: u.is_locked, isNew: false,
   });
   const toGroup = (g, prev) => ({
     id: g.id, name: g.name, isArchive: g.is_archive, members: g.members,
@@ -76,10 +76,10 @@
       const latest = toUser(await api.get('/api/users/' + selected.id));
       setState((s) => ({
         USERS: s.USERS.map((u) => u.id === selected.id
-          ? { ...u, isLocked: latest.isLocked, lockedUntil: latest.lockedUntil }
+          ? { ...u, isLocked: latest.isLocked, lockedUntilLabel: latest.lockedUntilLabel }
           : u),
         SAVED: s.SAVED.map((u) => u.id === selected.id
-          ? { ...u, isLocked: latest.isLocked, lockedUntil: latest.lockedUntil }
+          ? { ...u, isLocked: latest.isLocked, lockedUntilLabel: latest.lockedUntilLabel }
           : u),
       }));
     } catch (error) {
@@ -340,7 +340,7 @@
     setState({
       GROUPS: s.GROUPS.map((g) => (g.id === gid ? { ...g, collapsed: false } : g)),
       USERS: [...revertUnsaved(s.USERS, s.SAVED, s.selId),
-        { id, groupId: gid, fio: '', profile: '', login: '', password: '', fired: false, rights, lockedUntil: null, isLocked: false, isNew: true }],
+        { id, groupId: gid, fio: '', profile: '', login: '', password: '', fired: false, rights, lockedUntilLabel: null, isLocked: false, isNew: true }],
       selId: id, expandedId: id, detailsOpen: true, passVisible: false, activeGroupId: gid,
     });
     showToast('Новый сотрудник в группе «' + gname + '»');
@@ -424,10 +424,10 @@
 
 
   function lockHint(u) {
-    if (!u || u.isNew || !u.isLocked || !u.lockedUntil) return '';
+    if (!u || u.isNew || !u.isLocked || !u.lockedUntilLabel) return '';
     return '<div class="um-detail-row um-detail-row--warn" data-mk="dlock">' +
       '<span class="um-detail-label">Вход</span>' +
-      '<span class="um-lock-status">заблокирован до ' + esc(OMSA.time.time(u.lockedUntil)) + '</span>' +
+      '<span class="um-lock-status">заблокирован до ' + esc(u.lockedUntilLabel) + '</span>' +
       '</div>';
   }
 

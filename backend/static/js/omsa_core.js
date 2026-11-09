@@ -207,6 +207,10 @@
     }
 
     redirectToLogin() {
+      const returnTo = global.location.pathname + global.location.search;
+      if (returnTo !== this.loginUrl) {
+        try { global.sessionStorage.setItem('omsa-login-return-to', returnTo); } catch (e) {}
+      }
       global.location.replace(this.loginUrl);
     }
 

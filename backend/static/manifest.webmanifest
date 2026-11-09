@@ -5,7 +5,7 @@
   "description": "Журнал проверок и задач OMSA Ledger",
   "start_url": "/journal",
   "scope": "/",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#f5f5f7",
   "theme_color": "#f5f5f7",
   "categories": ["business", "productivity"],

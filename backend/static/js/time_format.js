@@ -3,15 +3,9 @@
 
   const OMSA = global.OMSA || (global.OMSA = {});
 
-  const HOURS_MINUTES = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const dateFormats = {};
 
   const partsOf = (format, date) => Object.fromEntries(format.formatToParts(date).map((p) => [p.type, p.value]));
-
-  function time(iso) {
-    const parts = partsOf(HOURS_MINUTES, new Date(iso));
-    return parts.hour + ':' + parts.minute;
-  }
 
   function appZone() {
     const meta = global.document.querySelector('meta[name="app-timezone"]');
@@ -28,5 +22,5 @@
 
   const appToday = () => dateKey(appZone(), new Date());
 
-  OMSA.time = { time, appZone, dateKey, appToday };
+  OMSA.time = { appZone, dateKey, appToday };
 })(window);
