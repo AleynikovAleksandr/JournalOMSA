@@ -42,6 +42,23 @@ def get_user(user_id: int, principal: PrincipalDep, container: ContainerDep, uow
     return _user_out(container, container.user_service(uow, principal).get(user_id))
 
 
+@router.put("/{user_id}/rights", response_model=UserOut)
+def set_user_rights(
+    user_id: int,
+    principal: PrincipalDep,
+    container: ContainerDep,
+    uow: UowDep,
+    data: Annotated[dict[str, Any], Depends(form(RightsForm))],
+):
+    user = container.user_service(uow, principal).set_rights(user_id, frozenset(data.get("rights") or ()))
+    return _user_out(container, user)
+
+
+@router.delete("/{user_id}/rights", response_model=UserOut, dependencies=[Depends(form(CsrfOnlyForm))])
+def reset_user_rights(user_id: int, principal: PrincipalDep, container: ContainerDep, uow: UowDep):
+    return _user_out(container, container.user_service(uow, principal).reset_rights(user_id))
+
+
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
     principal: PrincipalDep,

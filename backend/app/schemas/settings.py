@@ -80,8 +80,6 @@ class Settings(BaseSettings):
 
     # ---- уведомления (ТЗ, раздел 2) ----
     app_timezone: str
-    notify_remind_24h_enabled: bool
-    notify_remind_24h_minutes: int
     notify_remind_1h_enabled: bool
     notify_remind_1h_minutes: int
     notify_overdue_interval_minutes: int

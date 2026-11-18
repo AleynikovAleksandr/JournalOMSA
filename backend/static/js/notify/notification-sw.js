@@ -42,8 +42,8 @@ self.addEventListener('push', (event) => {
     if (target.origin !== self.location.origin || target.pathname !== '/journal') return;
     await self.registration.showNotification(item.title, {
       body: item.body || '',
-      icon: item.icon || '/static/images/brand.png',
-      badge: item.icon || '/static/images/brand.png',
+      icon: item.icon || '/static/images/brand-512.png',
+      badge: item.icon || '/static/images/brand-512.png',
       tag: 'omsa-' + item.id,
       requireInteraction: true,
       silent: false,

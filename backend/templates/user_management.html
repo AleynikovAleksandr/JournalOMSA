@@ -9,9 +9,6 @@
 </head>
 
 <body>
-<!-- ============================================================
-     РАЗМЕТКА
-     ============================================================ -->
 {% include "_loading_screen.html" %}
 <div class="page">
   <div class="page-bg"></div>
@@ -22,13 +19,17 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#050505" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
       <span class="um-head__title">Управление пользователями</span>
     </div>
-    <button class="um-icon um-logout" type="button" data-click="onLogout" title="Выход из системы">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-    </button>
+    <div class="um-head__actions">
+      <a class="um-return-app" href="{{ app_url }}" title="Вернуться в приложение">
+        <span>Вернуться в приложение</span>
+      </a>
+      <button class="um-icon um-logout" type="button" data-click="onLogout" title="Выход из системы">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
   </header>
 
   <main class="um-main">
-    <!-- левая колонка: поиск, кнопки, группы -->
     <div class="um-col">
 
       <div class="um-col" style="gap:10px;">
@@ -73,17 +74,13 @@
       <div id="groups" class="groups"></div>
     </div>
 
-    <!-- правая колонка: права -->
     <aside id="rights" class="um-rights"></aside>
   </main>
 
   <div id="toast" class="toast"></div>
 </div>
 
-<!-- ============================================================
-     СКРИПТЫ
-     ============================================================ -->
 <script src="{{ url_for('static', filename='js/omsa_core.js', v=asset_version) }}"></script>
-<script src="{{ url_for('static', filename='js/user_management.js', v=asset_version) }}"></script>
+<script src="{{ url_for('static', filename='js/pages/user_management.js', v=asset_version) }}"></script>
 </body>
 </html>

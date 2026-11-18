@@ -9,15 +9,11 @@
 </head>
 
 <body>
-<!-- ============================================================
-     РАЗМЕТКА
-     ============================================================ -->
 
 {% include "_loading_screen.html" %}
 
 <div id="app" class="app" data-journal-url="{{ url_for('web_pages.journal') }}" data-initial-modal="{{ initial_modal|default('') }}">
 
-  <!-- ---------- шапка ---------- -->
   <header class="jr-header">
     <div class="jr-brand">
       <img class="brand-logo" alt="OMSA Ledger" width="26" height="26" src="{{ url_for('static', filename='images/brand.png', v=asset_version) }}">
@@ -46,10 +42,8 @@
 
   <div class="jr-main-grid">
 
-    <!-- ---------- левая колонка ---------- -->
     <div class="col">
 
-      <!-- календарь -->
       <div class="card">
         <div class="cal-head">
           <button class="cal-nav" type="button" data-click="onPrevMonth">‹</button>
@@ -67,45 +61,45 @@
         </div>
       </div>
 
-      <!-- мои задачи -->
-      <div class="card card--flat">
-        <p class="card-title">Мои задачи</p>
-
-        <div class="check-row">
-          <button class="check-btn" type="button" data-click="onToggleMyTasks">
-            <span id="chkMyTasks" class="radio-box"></span>
-            Мои задачи
-          </button>
-          <button class="check-btn" type="button" data-click="onToggleCompleted">
-            <span id="chkCompleted" class="radio-box"></span>
-            Завершённые
-          </button>
+      <div class="card card--flat card--tasks">
+        <div class="task-view-picker">
+        <div class="task-tabs" role="tablist" aria-label="Разделы задач">
+          <button id="taskTabMy" class="task-tab" type="button" role="tab" aria-selected="true"
+            aria-controls="tasksPanel" data-task-view="my-active" data-click="onTaskTabClick" data-keydown="onTaskTabKeydown">Мои задачи</button>
+          <button id="taskTabCompleted" class="task-tab" type="button" role="tab" aria-selected="false"
+            aria-controls="tasksPanel" data-task-view="completed" data-click="onTaskTabClick" data-keydown="onTaskTabKeydown">Завершённые</button>
+          <button id="taskTabAll" class="task-tab" type="button" role="tab" aria-selected="false"
+            aria-controls="tasksPanel" data-task-view="my-all" data-click="onTaskTabClick" data-keydown="onTaskTabKeydown">Все статусы</button>
+          <button id="taskTabOthers" class="task-tab" type="button" role="tab" aria-selected="false" hidden
+            aria-controls="tasksPanel" data-task-view="others" data-click="onTaskTabClick" data-keydown="onTaskTabKeydown">Чужие задачи</button>
         </div>
 
-        <div class="table-scroll--tall">
-          <table class="jr-table jr-table--tasks">
-            <thead>
-              <tr>
-                <th>Дата</th>
-                <th>ФИО</th>
-                <th>Исполнитель</th>
-                <th>Статус</th>
-              </tr>
-            </thead>
-            <tbody id="tasksBody"></tbody>
-          </table>
-          <p id="tasksEmpty" class="empty-note" hidden>Нет задач по фильтру</p>
+        <div id="taskPanelScrim" class="scrim task-panel-scrim" data-mk="taskPanelScrim" data-click="onCloseTasksPanel" hidden></div>
+        <div id="tasksPanel" class="task-panel" role="tabpanel" tabindex="0" aria-labelledby="taskTabMy" data-view="my-active" hidden>
+          <div class="table-scroll--tall">
+            <table class="jr-table jr-table--tasks">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>ФИО</th>
+                  <th>Исполнитель</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="tasksBody"></tbody>
+            </table>
+            <p id="tasksEmpty" class="empty-note" hidden>Нет задач по фильтру</p>
+          </div>
+        </div>
         </div>
       </div>
 
     </div>
 
-    <!-- ---------- правая колонка ---------- -->
     <div class="col">
 
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:stretch;">
 
-        <!-- поиск и фильтры -->
         <div class="card card--grow">
           <div class="search-wrap">
             <span class="search-icon">
@@ -159,7 +153,6 @@
           </button>
         </div>
 
-        <!-- организация выбранной записи -->
         <div class="card card--grow">
           <div class="card-head">
             <p class="card-title">Организация</p>
@@ -186,14 +179,12 @@
         </div>
       </div>
 
-      <!-- журнал -->
       <div class="card card--table">
         <div class="table-scroll">
           <table class="jr-table jr-table--journal">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Вид</th>
+                <th class="col-type">Вид</th>
                 <th>Дата</th>
                 <th>Время</th>
                 <th>Номер</th>
@@ -216,18 +207,12 @@
   </div>
 </div>
 
-<!-- всплывающие слои: календари, время, списки, статусы задач -->
 <div id="popovers"></div>
-<!-- модальные окна -->
 <div id="modalRoot"></div>
-<!-- уведомления о результатах операций -->
 <div id="toastRoot"></div>
 
-<!-- ============================================================
-     СКРИПТЫ
-     ============================================================ -->
 <script src="{{ url_for('static', filename='js/omsa_core.js', v=asset_version) }}"></script>
 <script src="{{ url_for('static', filename='js/notify/notifications.js', v=asset_version) }}"></script>
-<script src="{{ url_for('static', filename='js/journal.js', v=asset_version) }}"></script>
+<script src="{{ url_for('static', filename='js/pages/journal.js', v=asset_version) }}"></script>
 </body>
 </html>

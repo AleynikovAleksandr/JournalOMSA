@@ -41,6 +41,7 @@ def create_flask_app(portal: PortalConfig, settings: Settings) -> Flask:
         TEMPLATES_AUTO_RELOAD=not settings.is_production,
         OMSA_PORTAL=portal.portal.value,
         OMSA_ADMIN_URL=portal.admin_link,
+        OMSA_APP_URL=f"{settings.origins_for(Portal.WEB)[0]}/journal",
         OMSA_ASSET_VERSION=settings.app_version,
     )
     configure_flask_database(flask_app, settings)
@@ -55,6 +56,7 @@ def create_flask_app(portal: PortalConfig, settings: Settings) -> Flask:
     def _template_globals() -> dict[str, str]:
         return {
             "asset_version": flask_app.config["OMSA_ASSET_VERSION"],
+            "app_url": flask_app.config["OMSA_APP_URL"],
             "portal": portal.portal.value,
             "app_timezone": settings.app_timezone,
         }

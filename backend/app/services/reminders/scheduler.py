@@ -7,7 +7,7 @@
 
 * При создании, назначении или изменении задачи NotificationScheduler сразу
   записывает уведомление о событии и рассчитанные заранее напоминания
-  (за сутки, за час, наступление времени), каждое со своим моментом показа.
+  (за час и наступление времени), каждое со своим моментом показа.
 * При завершении, удалении или переназначении задачи непоказанные
   уведомления удаляются.
 * Повторные напоминания о незавершённой задаче досоздаёт периодическая задача
@@ -46,13 +46,11 @@ TIMED_KINDS = (
 class NotificationConfig:
     """Параметры конфигурации (ТЗ, примечания к таблице п. 2.2).
 
-    События 2 и 3 отключаются администратором на уровне конфигурации,
-    пользователь отключить уведомления не может.
+    Напоминание за час настраивается администратором; пользователь
+    отключить уведомления не может.
     """
 
     timezone: ZoneInfo
-    remind_24h_enabled: bool = True
-    remind_24h_before: timedelta = timedelta(hours=24)
     remind_1h_enabled: bool = True
     remind_1h_before: timedelta = timedelta(hours=1)
     overdue_interval: timedelta = timedelta(hours=1)
@@ -61,8 +59,6 @@ class NotificationConfig:
     def from_settings(cls, settings: Settings) -> NotificationConfig:
         return cls(
             timezone=settings.timezone,
-            remind_24h_enabled=settings.notify_remind_24h_enabled,
-            remind_24h_before=timedelta(minutes=settings.notify_remind_24h_minutes),
             remind_1h_enabled=settings.notify_remind_1h_enabled,
             remind_1h_before=timedelta(minutes=settings.notify_remind_1h_minutes),
             overdue_interval=timedelta(minutes=max(1, settings.notify_overdue_interval_minutes)),
@@ -91,10 +87,6 @@ class NotificationScheduler:
     def _timed(self, record: JournalRecord, user_uuid: UUID, now: datetime) -> list[PlannedNotification]:
         moment = self.moment(record)
         planned: list[PlannedNotification] = []
-        if self._config.remind_24h_enabled:
-            fire_at = moment - self._config.remind_24h_before
-            if fire_at > now:
-                planned.append(PlannedNotification(record.id, user_uuid, NotificationKind.REMIND_24H, fire_at))
         if self._config.remind_1h_enabled:
             fire_at = moment - self._config.remind_1h_before
             if fire_at > now:

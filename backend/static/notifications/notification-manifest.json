@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "icon": "/static/images/brand.png",
+  "icon": "/static/images/brand-512.png",
   "url": "/journal?record_id={journal_id}",
   "body": "{fio} — {date} {time}, {type}",
   "actions": [

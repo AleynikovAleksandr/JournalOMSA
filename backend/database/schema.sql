@@ -96,6 +96,8 @@ CREATE TABLE "TUserGroups" (
 	rules VARCHAR(150),
 	-- Группа «Архив (уволенные)»: показывает уволенных сотрудников
 	is_archive BOOLEAN DEFAULT false NOT NULL,
+	-- Скрытая группа возвращается при восстановлении сотрудника
+	is_deleted BOOLEAN DEFAULT false NOT NULL,
 	CONSTRAINT "pk_TUserGroups" PRIMARY KEY (id),
 	CONSTRAINT "uq_TUserGroups_name" UNIQUE (name)
 );

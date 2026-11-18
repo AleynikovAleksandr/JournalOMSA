@@ -21,15 +21,11 @@ from app.models.references import Option
 from app.models.user import User, UserGroup
 from app.schemas.short_name import short_name
 from app.services.access_control.rights import RIGHT_KEYS, RIGHTS_TREE, format_rules, parse_rules
+from app.services.access_control.principal import (
+    Principal, SYSTEM_ADMIN_LOGIN, allowed_rights_for_group, effective_user_rules, has_user_rights_override,
+)
 
 SYSTEM_ADMIN_FIO = "Администратор системы"
-
-
-def effective_user_rules(user: User) -> str | None:
-    """Системный администратор сохраняет личные права при настройке своей группы."""
-    if user.fio == SYSTEM_ADMIN_FIO or user.group.rules is None:
-        return user.rules
-    return user.group.rules
 
 
 class IdName(BaseModel):
@@ -66,6 +62,8 @@ class RightOut(BaseModel):
     label: str
     desc: str
     restrictive: bool
+    details: str
+    admin_only: bool
 
 
 class RightGroupOut(BaseModel):
@@ -78,15 +76,23 @@ def rights_tree() -> list[RightGroupOut]:
         RightGroupOut(
             title=group.title,
             items=[
-                RightOut(key=i.key, label=i.label, desc=i.description, restrictive=i.restrictive) for i in group.items
+                RightOut(
+                    key=i.key,
+                    label=i.label,
+                    desc=i.description,
+                    restrictive=i.restrictive,
+                    details=i.details,
+                    admin_only=i.admin_only,
+                )
+                for i in group.items
             ],
         )
         for group in RIGHTS_TREE
     ]
 
 
-def rights_list(rules: str | None) -> list[str]:
-    granted = parse_rules(rules)
+def rights_list(rules: str | None, *, group_name: str) -> list[str]:
+    granted = allowed_rights_for_group(group_name, parse_rules(rules))
     return [key for key in RIGHT_KEYS if key in granted]
 
 
@@ -104,6 +110,8 @@ class MeOut(BaseModel):
     group_name: str
     rights: list[str]
     is_fired: bool
+    is_system_admin: bool
+    can_view_other_tasks: bool
     portal: str
     links: dict[str, str]
 
@@ -118,8 +126,10 @@ class MeOut(BaseModel):
             profile=user.profile,
             group_id=user.group_id,
             group_name=user.group.name,
-            rights=rights_list(effective_user_rules(user)),
+            rights=rights_list(effective_user_rules(user), group_name=user.group.name),
             is_fired=user.is_fired,
+            is_system_admin=user.login == SYSTEM_ADMIN_LOGIN and not user.is_fired,
+            can_view_other_tasks=Principal.from_user(user).can_view_other_tasks,
             portal=portal,
             links={"admin": admin_url},
         )
@@ -255,6 +265,7 @@ class UserOut(BaseModel):
     group_name: str
     is_fired: bool
     rights: list[str]
+    rights_overridden: bool
     failed_login_attempts: int
     locked_until: datetime | None
     locked_until_label: str | None
@@ -271,7 +282,8 @@ class UserOut(BaseModel):
             group_id=user.group_id,
             group_name=user.group.name,
             is_fired=user.is_fired,
-            rights=rights_list(effective_user_rules(user)),
+            rights=rights_list(effective_user_rules(user), group_name=user.group.name),
+            rights_overridden=has_user_rights_override(user),
             failed_login_attempts=user.failed_login_attempts,
             locked_until=user.locked_until,
             locked_until_label=user.locked_until.astimezone(timezone).strftime("%H:%M") if user.locked_until else None,
@@ -291,7 +303,8 @@ class UserGroupOut(BaseModel):
     def of(cls, group: UserGroup, members: int = 0, *, preview: frozenset[str] | None = None) -> UserGroupOut:
         return cls(
             id=group.id, name=group.name, is_archive=group.is_archive, members=members,
-            rights=rights_list(group.rules) if group.rules is not None else rights_list(format_rules(preview or ())),
+            rights=rights_list(group.rules, group_name=group.name) if group.rules is not None
+            else rights_list(format_rules(preview or ()), group_name=group.name),
             rights_configured=group.rules is not None,
         )
 

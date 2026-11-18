@@ -6,8 +6,13 @@ from app.interfaces.repositories import UnitOfWork
 from app.models.user import UserGroup
 from app.schemas.responses import Conflict, NotFound, PermissionDenied, ValidationFailed
 from app.services.access_control.access import AccessPolicy
-from app.services.access_control.principal import Principal
-from app.services.access_control.rights import DEFAULT_RIGHTS, MENU_SETTINGS, format_rules, parse_rules
+from app.services.access_control.principal import (
+    ADMIN_GROUP_NAME, Principal, allowed_rights_for_group, has_user_rights_override,
+)
+from app.services.access_control.rights import (
+    ADMIN_ONLY_RIGHTS, DEFAULT_RIGHTS, MENU_SETTINGS, format_personal_rules, format_rules,
+    has_personal_rules, parse_rules,
+)
 from app.services.user_management.users import NO_SETTINGS_RIGHT, SYSTEM_ADMIN_FIO
 
 
@@ -37,7 +42,7 @@ class UserGroupService:
 
     def _get(self, group_id: int) -> UserGroup:
         group = self._uow.user_groups.get(group_id)
-        if group is None:
+        if group is None or group.is_deleted:
             raise NotFound("Группа не найдена")
         return group
 
@@ -49,7 +54,13 @@ class UserGroupService:
 
     def create(self, name: str) -> UserGroup:
         self._policy.require(self._principal, "user_groups", "manage", NO_SETTINGS_RIGHT)
-        group = UserGroup(name=self._name(name), is_archive=False, rules=format_rules(DEFAULT_RIGHTS))
+        cleaned = name.strip()
+        deleted = self._uow.user_groups.get_deleted_by_name(cleaned)
+        if deleted is not None:
+            deleted.is_deleted = False
+            self._uow.commit()
+            return deleted
+        group = UserGroup(name=self._name(cleaned), is_archive=False, rules=format_rules(DEFAULT_RIGHTS))
         self._uow.user_groups.add(group)
         self._uow.commit()
         return group
@@ -57,6 +68,8 @@ class UserGroupService:
     def rename(self, group_id: int, name: str) -> UserGroup:
         self._policy.require(self._principal, "user_groups", "manage", NO_SETTINGS_RIGHT)
         group = self._get(group_id)
+        if group.name == ADMIN_GROUP_NAME:
+            raise Conflict("Название группы «Администраторы» изменить нельзя")
         group.name = self._name(name, exclude_id=group.id)
         self._uow.commit()
         return group
@@ -66,9 +79,15 @@ class UserGroupService:
         group = self._get(group_id)
         if group.is_archive:
             raise Conflict("Группу «Архив» удалить нельзя")
-        if self._uow.users.count_in_group(group.id):
+        if self._uow.users.count_in_group(group.id, include_fired=False):
             raise Conflict("Группа не пуста — сначала перенесите сотрудников")
-        self._uow.user_groups.delete(group)
+        members = self._uow.users.list(group_id=group.id)
+        if members:
+            # Скрываем группу, но сохраняем связь с уволенными: при восстановлении
+            # эта же группа вернётся в список вместе с исходными правами.
+            group.is_deleted = True
+        else:
+            self._uow.user_groups.delete(group)
         self._uow.commit()
 
     def set_rights(self, group_id: int, rights: frozenset[str]) -> UserGroup:
@@ -76,11 +95,14 @@ class UserGroupService:
         group = self._get(group_id)
         if group.is_archive:
             raise Conflict("У архивной группы нет собственных прав")
+        if group.name != ADMIN_GROUP_NAME and rights & ADMIN_ONLY_RIGHTS:
+            raise PermissionDenied("Эти права доступны только группе «Администраторы»")
         current = self._uow.users.get(self._principal.user_id)
         if (
             current is not None
             and current.group_id == group_id
             and current.fio != SYSTEM_ADMIN_FIO
+            and not has_user_rights_override(current)
             and MENU_SETTINGS not in rights
         ):
             raise PermissionDenied("Нельзя снять у своей группы право «Настройки»")
@@ -88,9 +110,14 @@ class UserGroupService:
             formatted = format_rules(rights)
         except ValueError as exc:
             raise ValidationFailed(str(exc), details={"rights": [str(exc)]}) from exc
-        group.rules = formatted
         for user in self._uow.users.list(group_id=group_id):
-            if user.fio != SYSTEM_ADMIN_FIO:
+            if user.fio == SYSTEM_ADMIN_FIO:
+                continue
+            if has_user_rights_override(user):
+                if not has_personal_rules(user.rules):
+                    user.rules = format_personal_rules(allowed_rights_for_group(group.name, parse_rules(user.rules)))
+            else:
                 user.rules = formatted
+        group.rules = formatted
         self._uow.commit()
         return group

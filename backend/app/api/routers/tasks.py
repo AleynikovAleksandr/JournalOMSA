@@ -18,6 +18,11 @@ def my_tasks(principal: PrincipalDep, container: ContainerDep, uow: UowDep, comp
     return [JournalRecordOut.of(record) for record in records]
 
 
+@router.get("/others", response_model=list[JournalRecordOut])
+def other_tasks(principal: PrincipalDep, container: ContainerDep, uow: UowDep):
+    return [JournalRecordOut.of(record) for record in container.task_service(uow, principal).others()]
+
+
 @router.get("/upcoming", response_model=list[JournalRecordOut])
 def upcoming(principal: PrincipalDep, container: ContainerDep, uow: UowDep):
     return [JournalRecordOut.of(record) for record in container.task_service(uow, principal).upcoming()]

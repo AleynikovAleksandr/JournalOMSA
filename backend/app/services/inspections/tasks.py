@@ -7,6 +7,7 @@ from datetime import timedelta
 from app.interfaces.repositories import UnitOfWork
 from app.models.journal import JournalRecord
 from app.schemas.commands import JournalFilter
+from app.schemas.responses import PermissionDenied
 from app.services.access_control.principal import Principal
 from app.services.inspections.records import JournalService
 from app.services.reminders.scheduler import NotificationScheduler
@@ -36,6 +37,18 @@ class TaskService:
 
     def my(self, *, completed: bool = False) -> list[JournalRecord]:
         return self._mine(completed=completed)
+
+    def others(self) -> list[JournalRecord]:
+        self._require_admin_group()
+        return [
+            record
+            for record in self._uow.journal.list(JournalFilter())
+            if record.executor_id != self._principal.user_id
+        ]
+
+    def _require_admin_group(self) -> None:
+        if not self._principal.can_view_other_tasks:
+            raise PermissionDenied("Это действие доступно только группе «Администраторы»")
 
     def upcoming(self) -> list[JournalRecord]:
         """Ближайшие предстоящие задачи (для планирования уведомлений)."""

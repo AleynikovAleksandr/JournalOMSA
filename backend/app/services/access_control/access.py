@@ -23,7 +23,7 @@ class AccessPolicy:
         if principal.is_fired:
             # Уволенный сотрудник может только просматривать свои задачи.
             return [ROLE_AUTHENTICATED]
-        return [ROLE_AUTHENTICATED, ROLE_ACTIVE, *sorted(principal.rights)]
+        return [ROLE_AUTHENTICATED, ROLE_ACTIVE, *sorted(right for right in principal.rights if principal.has(right))]
 
     def allows(self, principal: Principal, obj: str, act: str) -> bool:
         return self._acl.allows(self.subjects(principal), obj, act)
@@ -34,8 +34,7 @@ class AccessPolicy:
 
 
 class JournalRules:
-    """Правила журнала, зависящие от конкретной записи: ограничения
-    «только своих задач» (jrnOwnOnly) и «только статуса» (jrnStatusOnly)."""
+    """Проверки записи: ограничение своими задачами и отдельное право менять статус."""
 
     def __init__(self, policy: AccessPolicy, principal: Principal) -> None:
         self._policy = policy
@@ -60,20 +59,36 @@ class JournalRules:
     def can_create(self, executor_id: int) -> bool:
         return (
             self._policy.allows(self._principal, "journal", "create")
-            and not self._principal.has(JRN_STATUS_ONLY)
+            and (
+                not self._principal.has(JRN_STATUS_ONLY)
+                or self._policy.allows(self._principal, "groups", "create")
+            )
             and self._own_only_ok(executor_id)
         )
 
     def can_edit_fields(self, record: JournalRecord) -> bool:
         return (
             self._policy.allows(self._principal, "journal", "update")
-            and not self._principal.has(JRN_STATUS_ONLY)
+            and (
+                self._policy.allows(self._principal, "groups", "update")
+                or (self._principal.has(JRN_OWN_ONLY) and self._own(record.executor_id))
+            )
             and self._own_only_ok(record.executor_id)
         )
 
     def can_change_status(self, record: JournalRecord) -> bool:
-        return self._policy.allows(self._principal, "journal", "update_status") and self._own_only_ok(
-            record.executor_id
+        own = self._own(record.executor_id)
+        return (
+            self._policy.allows(self._principal, "journal", "update_status")
+            and (
+                self._principal.has(JRN_STATUS_ONLY)
+                or self._principal.is_system_admin
+                or (self._principal.has(JRN_OWN_ONLY) and own)
+            )
+            and (
+                own
+                or self._principal.can_view_other_tasks
+            )
         )
 
     def can_reassign(self, record: JournalRecord, new_executor_id: int) -> bool:

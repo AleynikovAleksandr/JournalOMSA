@@ -38,6 +38,8 @@
   const TYPE_CLASS = { 'ПФО': 'tag--pfo', 'Физо': 'tag--fizo', 'ЗУН': 'tag--zun' };
   const typeClass = (name) => TYPE_CLASS[name] || 'tag--zun';
   const statusClass = (final) => (final ? 'ready' : 'process');
+  const TASK_VIEWS = ['my-active', 'completed', 'my-all', 'others'];
+  const TASK_TAB_IDS = { 'my-active': 'taskTabMy', completed: 'taskTabCompleted', 'my-all': 'taskTabAll', others: 'taskTabOthers' };
 
   
 
@@ -90,9 +92,9 @@
     calendarMonth: null, selectedDateKey: null, todayKey: null,
     selectedBlockId: null, selectedRowId: null, highlightRowId: null,
     searchFio: '', executorFilter: 'all', dateFrom: '', dateTo: '', noDateLimit: true, searchActive: false,
-    myTasksOnly: false, completedOnly: false, execDropdownOpen: false,
+    tasksView: 'my-active', tasksDropdownOpen: false, execDropdownOpen: false,
     timeDropdownOpen: false, draftRecordId: null, mobileMenuOpen: false,
-    openDD: null, ddRowIndex: null, categoryFilter: '', openTaskDD: null, taskDDPos: { top: 0, left: 0 },
+    openDD: null, ddRowIndex: null, openTaskDD: null, taskDDPos: { top: 0, left: 0 },
     openCal: null, calRowIndex: null, calMonth: new Date(), calPos: { top: 0, left: 0 },
     timeRowIndex: null,
     timePos: { top: 0, left: 0 }, ddPos: { top: 0, left: 0, width: 0 },
@@ -133,9 +135,6 @@
       fio: !(row.fio || '').trim(),
       org: !row.orgId,
       category: !row.categoryId && !(row.categoryName || '').trim(),
-      type: !row.typeId,
-      date: !row.date,
-      time: !row.time,
       exec: !row.executorId,
       status: !row.statusId,
     };
@@ -146,8 +145,6 @@
   }
   function activeAttesteeIndex(target) {
     if (target.hasAttribute('data-row')) return Number(target.getAttribute('data-row'));
-    const m = state.modal;
-    if (m?.type === 'newBlock' && m.step === 'attendees' && m.attendees[m.activeAttesteeIndex]) return m.activeAttesteeIndex;
     return null;
   }
 
@@ -155,21 +152,39 @@
 
 
   const isFired = () => !!(state.me && state.me.is_fired);
+  const canViewOtherTasks = () => !!(state.me && state.me.can_view_other_tasks);
+  const availableTaskViews = () => canViewOtherTasks()
+    ? TASK_VIEWS
+    : TASK_VIEWS.filter((view) => view !== 'others');
   const myId = () => (state.me ? state.me.id : null);
   const ownOnlyOk = (row) => !state.RIGHTS.jrnOwnOnly || row.executorId === myId();
-  const canEditFields = (row) => !isFired() && !state.RIGHTS.jrnStatusOnly && ownOnlyOk(row);
-  const canChangeStatus = (row) => !isFired() && ownOnlyOk(row);
+  const canEditCard = (row) => !!state.RIGHTS.grpEdit || (!!state.RIGHTS.jrnOwnOnly && row.executorId === myId());
+  const canEditFields = (row) => !isFired() && canEditCard(row) && ownOnlyOk(row);
+  const canChangeStatus = (row) => {
+    const own = row.executorId === myId();
+    return !isFired() &&
+      (!!state.RIGHTS.jrnStatusOnly || !!state.me?.is_system_admin || (!!state.RIGHTS.jrnOwnOnly && own)) &&
+      (own || canViewOtherTasks());
+  };
   const canDelete = (row) => !isFired() && !!state.RIGHTS.jrnDel && ownOnlyOk(row);
-  const canCreateRecords = () => !isFired() && !state.RIGHTS.jrnStatusOnly;
+  const canCreateRecords = () => !isFired() && (!state.RIGHTS.jrnStatusOnly || !!state.RIGHTS.grpAdd);
+  const canAddToGroup = () => canCreateRecords() && !!state.RIGHTS.grpAdd;
 
   function applyMe(user) {
+    const previousTasksQuery = tasksQuery();
     const rights = {};
     
     if (!user.is_fired) user.rights.forEach((k) => { rights[k] = true; });
     state.me = user;
     state.RIGHTS = rights;
     state.adminUrl = user.links && user.links.admin ? user.links.admin : '';
-    if (state.dataLoaded) render();
+    if (!canViewOtherTasks() && state.tasksView === 'others') {
+      state.tasksView = 'my-active';
+    }
+    if (state.dataLoaded) {
+      render();
+      if (tasksQuery() !== previousTasksQuery) loadTasks().catch(handleError);
+    }
   }
   api.onSession((data) => applyMe(data.user));
 
@@ -206,7 +221,10 @@
   }
 
   function tasksQuery() {
-    return '/api/journal?completed=' + state.completedOnly + (state.myTasksOnly ? '&my=true' : '');
+    if (state.tasksView === 'completed') return '/api/tasks/my?completed=true';
+    if (state.tasksView === 'my-all') return '/api/journal?my=true';
+    if (state.tasksView === 'others') return '/api/tasks/others';
+    return '/api/tasks/my?completed=false';
   }
 
   let journalReloadTimer = null;
@@ -273,8 +291,18 @@
       window.history.replaceState(null, '', '/journal');
       await openNotificationRecord(recordId, notificationId);
     } else if (elApp.dataset.initialModal === 'newBlock') {
-      H.onNewGroupMenu();
-      if (state.modal?.type === 'newBlock') state.routeModal = 'newBlock';
+      const groupId = Number(urlParams.get('group_id'));
+      if (Number.isSafeInteger(groupId) && groupId > 0) {
+        const block = state.BLOCKS.find((item) => item.id === groupId);
+        if (block && canAddToGroup()) openGroupEditor(block, groupId);
+        else {
+          window.history.replaceState(null, '', '/journal');
+          showToast(block ? 'Недостаточно прав для добавления в группу' : 'Группа не найдена');
+        }
+      } else {
+        H.onNewGroupMenu();
+        if (state.modal?.type === 'newBlock') state.routeModal = 'newBlock';
+      }
     } else if (elApp.dataset.initialModal === 'references') {
       H.onReferences();
       if (state.modal?.type === 'references') state.routeModal = 'references';
@@ -283,6 +311,7 @@
     setInterval(() => {
       refreshToday();
       reloadData().catch(() => {});
+      autoRefreshOrganizations().catch(() => {});
     }, DATA_REFRESH_MS);
   }
 
@@ -392,7 +421,8 @@
       categoryId: row.categoryId, orgId: row.orgId, executorId: row.executorId, executorName: row.executor,
       categoryName: row.category || nameById(state.CATEGORIES, row.categoryId),
       statusId: row.statusId, statusName: nameById(state.STATUSES, row.statusId), note: row.note, version: row.version,
-      readOnly: !editable && !statusEditable, statusOnly: !editable && statusEditable, lockedBy: null,
+      readOnly: !editable && !statusEditable, statusOnly: !editable && statusEditable,
+      statusLocked: !statusEditable, lockedBy: null,
     };
     setState({ selectedRowId: row.id, modal, openDD: null, openCal: null, timeDropdownOpen: false });
     if (!modal.readOnly) acquireLock(row.id);
@@ -400,7 +430,6 @@
 
   function openRecordDraft(block) {
     const s = state;
-    const cat = s.CATEGORIES[0];
     const org = s.ORGANIZATIONS[0];
     const st = s.STATUSES.find((x) => !x.is_final) || s.STATUSES[0];
     setState({
@@ -408,7 +437,7 @@
       modal: {
         type: 'record', isNew: true, id: null, groupId: block.id,
         date: block.date, time: block.time, typeId: block.typeId, typeName: nameById(s.TYPES, block.typeId), fio: '',
-        categoryId: cat ? cat.id : null, categoryName: cat ? cat.name : '', orgId: org ? org.id : null,
+        categoryId: null, categoryName: '', orgId: org ? org.id : null,
         executorId: myId(), executorName: s.me ? s.me.short_name : '',
         statusId: st ? st.id : null, statusName: st ? st.name : '', note: '', version: null,
         readOnly: false, statusOnly: false, lockedBy: null,
@@ -578,8 +607,29 @@
     clearTimeout(hlTimer);
     hlTimer = setTimeout(() => setState({ highlightRowId: null }), 1800);
   };
-  H.onToggleMyTasks = () => setState((s) => ({ myTasksOnly: !s.myTasksOnly, completedOnly: s.myTasksOnly ? s.completedOnly : false }));
-  H.onToggleCompleted = () => setState((s) => ({ completedOnly: !s.completedOnly, myTasksOnly: s.completedOnly ? s.myTasksOnly : false }));
+  H.onTaskTabClick = (e) => {
+    const view = e.currentTarget.getAttribute('data-task-view');
+    if (!availableTaskViews().includes(view)) return;
+    setState((s) => ({
+      tasksView: view,
+      tasksDropdownOpen: !(s.tasksDropdownOpen && s.tasksView === view),
+    }));
+  };
+  H.onCloseTasksPanel = () => setState({ tasksDropdownOpen: false });
+  H.onTaskTabKeydown = (e) => {
+    const views = availableTaskViews();
+    const index = views.indexOf(e.currentTarget.getAttribute('data-task-view'));
+    let next = index;
+    if (e.key === 'ArrowRight') next = (index + 1) % views.length;
+    else if (e.key === 'ArrowLeft') next = (index - 1 + views.length) % views.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = views.length - 1;
+    else return;
+    e.preventDefault();
+    const tab = el(TASK_TAB_IDS[views[next]]);
+    tab.focus();
+    H.onTaskTabClick({ currentTarget: tab });
+  };
 
   
   H.onOpenDD = (e) => {
@@ -599,14 +649,15 @@
   H.onPickDD = (e) => {
     const field = e.currentTarget.getAttribute('data-field');
     const val = Number(e.currentTarget.getAttribute('data-val'));
-    const patch = { [field]: val };
+    const patch = field === 'fixedCategoryNumber'
+      ? { categoryId: null, categoryName: 'Категория ' + val }
+      : { [field]: val };
     if (field === 'executorId') {
       const ex = state.EXECUTORS.find((x) => x.id === val);
       patch.executorName = ex ? ex.short_name : '';
     }
     if (field === 'categoryId') {
       patch.categoryName = nameById(state.CATEGORIES, val);
-      patch.categoryFilter = '';
     }
     if (field === 'typeId') patch.typeName = nameById(state.TYPES, val);
     if (field === 'statusId') patch.statusName = nameById(state.STATUSES, val);
@@ -616,34 +667,6 @@
     } else if (state.modal?.type === 'newBlock' && field === 'typeId') {
       setState((s) => ({ modal: { ...s.modal, typeId: val, typeName: patch.typeName }, openDD: null, ddRowIndex: null }));
     } else setState((s) => ({ modal: { ...s.modal, ...patch }, openDD: null, ddRowIndex: null }));
-  };
-
-  H.onRecordCategoryClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const rowIndex = e.currentTarget.hasAttribute('data-row') ? Number(e.currentTarget.getAttribute('data-row')) : null;
-    setState((s) => ({
-      openDD: 'cat', ddRowIndex: rowIndex, categoryFilter: '',
-      ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width },
-      ...(s.modal?.type === 'newBlock' && rowIndex != null ? { modal: { ...s.modal, activeAttesteeIndex: rowIndex } } : {}),
-    }));
-  };
-  H.onRecordCategoryInput = (e) => {
-    const value = e.target.value;
-    const normalized = value.trim().toLocaleLowerCase();
-    const match = state.CATEGORIES.find((item) => item.name.trim().toLocaleLowerCase() === normalized);
-    const rect = e.target.getBoundingClientRect();
-    const rowIndex = e.target.hasAttribute('data-row') ? Number(e.target.getAttribute('data-row')) : null;
-    if (state.modal?.type === 'newBlock' && rowIndex != null) {
-      updateAttestee(rowIndex, { categoryId: match ? match.id : null, categoryName: match ? match.name : value });
-      setState({ openDD: 'cat', ddRowIndex: rowIndex, categoryFilter: value,
-        ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width } });
-      return;
-    }
-    setState((s) => ({
-      modal: { ...s.modal, categoryId: match ? match.id : null, categoryName: match ? match.name : value },
-      openDD: 'cat', categoryFilter: value,
-      ddPos: { top: rect.bottom + 6, left: rect.left, width: rect.width },
-    }));
   };
 
   H.onToggleTimeDropdown = (e) => {
@@ -679,42 +702,51 @@
   };
 
   
+  function openGroupEditor(block, existingGroupId) {
+    const canAddAttendees = canCreateRecords();
+    const t0 = state.TYPES[0];
+    const initialDate = block ? block.date : OMSA.time.appToday();
+    const modal = { type: 'newBlock', step: 'attendees', date: initialDate,
+      time: block ? block.time : '09:00', typeId: block ? block.typeId : (t0 ? t0.id : null),
+      typeName: block ? block.type : (t0 ? t0.name : ''), existingGroupId: existingGroupId || null,
+      attendees: [], activeAttesteeIndex: canAddAttendees ? 0 : null,
+      validationAttempted: false, groupValidationAttempted: false };
+    if (canAddAttendees) modal.attendees = [newAttestee(modal)];
+    const day = parseKey(modal.date);
+    setState({ modal,
+      ...(existingGroupId ? {} : {
+        todayKey: initialDate, selectedDateKey: initialDate, selectedBlockId: null,
+        calendarMonth: new Date(day.getFullYear(), day.getMonth(), 1),
+      }),
+      openCal: null, calRowIndex: null, openDD: null, ddRowIndex: null,
+      timeDropdownOpen: false, timeRowIndex: null });
+    if (existingGroupId) {
+      const url = new URL(elNavNewGroup.getAttribute('href'), window.location.href);
+      url.searchParams.set('group_id', String(existingGroupId));
+      state.routeModal = 'newBlock';
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  }
   H.onNewGroupMenu = () => {
     if (isFired() || !state.RIGHTS.grpAdd) return;
-    const t0 = state.TYPES[0];
-    const modal = { type: 'newBlock', step: 'group', date: state.selectedDateKey, time: '09:00',
-      typeId: t0 ? t0.id : null, typeName: t0 ? t0.name : '', attendees: [], activeAttesteeIndex: null,
-      validationAttempted: false,
-      appliedDefaults: null };
-    setState({ modal });
+    openGroupEditor(null, null);
   };
-  H.onNextNewGroup = () => {
-    const m = state.modal;
-    if (!m?.date || !m.time || !m.typeId) {
-      showToast('Укажите дату, время и вид проверки');
-      return;
-    }
-    setState((s) => {
-      const current = s.modal;
-      const previous = current.appliedDefaults;
-      const attendees = current.attendees.length ? current.attendees.map((row) => {
-        if (!previous) return row;
-        const patch = {};
-        if (row.date === previous.date) patch.date = current.date;
-        if (row.time === previous.time) patch.time = current.time;
-        if (row.typeId === previous.typeId) { patch.typeId = current.typeId; patch.typeName = current.typeName; }
-        return { ...row, ...patch };
-      }) : [newAttestee(current)];
-      return { modal: { ...current, step: 'attendees', attendees,
-        activeAttesteeIndex: current.activeAttesteeIndex ?? 0,
-        appliedDefaults: { date: current.date, time: current.time, typeId: current.typeId } } };
-    });
+  H.onAddAttesteeToGroup = (e) => {
+    e.preventDefault();
+    if (!canAddToGroup()) return;
+    const groupId = Number(e.currentTarget.getAttribute('data-group-id'));
+    const block = state.BLOCKS.find((item) => item.id === groupId);
+    if (!block) return;
+    openGroupEditor(block, groupId);
   };
-  H.onBackNewGroup = () => setState((s) => ({ modal: { ...s.modal, step: 'group' },
-    openCal: null, openDD: null, timeDropdownOpen: false }));
   H.onSaveNewBlock = async () => {
     const m = state.modal;
-    if (!m || state.saving || (m.step === 'group' && canCreateRecords())) return;
+    if (!m || state.saving) return;
+    if (!m.date || !m.time || !m.typeId) {
+      setState((s) => ({ modal: { ...s.modal, groupValidationAttempted: true } }));
+      showToast('Укажите дату, время и вид проверки', 'validation');
+      return;
+    }
     const rows = m.attendees || [];
     if (rows.some((row) => Object.values(missingAttesteeFields(row)).some(Boolean))) {
       setState((s) => ({ modal: { ...s.modal, validationAttempted: true } }));
@@ -723,23 +755,29 @@
     }
     setState({ saving: true });
     try {
-      const result = await api.post('/api/groups/with-records', {
-        group: { date: m.date, time: m.time,
-          type_check_id: m.typeId, type_check_name: m.typeName },
-        records: rows.map((row) => ({ date: row.date, time: row.time, type_check_id: row.typeId,
-          type_check_name: row.typeName, fio: row.fio, category_id: row.categoryId,
-          category_name: row.categoryName, organization_id: row.orgId, executor_id: row.executorId,
-          solution_id: row.statusId, solution_name: row.statusName, note: row.note || '' })),
-      });
+      const recordPayload = rows.map((row) => ({ date: m.date, time: m.time, type_check_id: m.typeId,
+        type_check_name: m.typeName, fio: row.fio, category_id: row.categoryId,
+        category_name: row.categoryName, organization_id: row.orgId, executor_id: row.executorId,
+        solution_id: row.statusId, solution_name: row.statusName, note: row.note || '' }));
+      const result = m.existingGroupId
+        ? await api.post('/api/groups/' + m.existingGroupId + '/records', { records: recordPayload })
+        : await api.post('/api/groups/with-records', {
+            group: { date: m.date, time: m.time,
+              type_check_id: m.typeId, type_check_name: m.typeName },
+            records: recordPayload,
+          });
       const block = toBlock(result.group);
       const day = parseKey(block.date);
       setState((s) => ({
-        BLOCKS: [...s.BLOCKS, block], selectedDateKey: block.date, searchActive: false, saving: false,
-        calendarMonth: new Date(day.getFullYear(), day.getMonth(), 1),
+        BLOCKS: s.BLOCKS.some((item) => item.id === block.id) ? s.BLOCKS : [...s.BLOCKS, block],
+        selectedDateKey: m.existingGroupId ? s.selectedDateKey : block.date,
+        selectedBlockId: null, searchActive: m.existingGroupId ? s.searchActive : false,
+        saving: false,
+        calendarMonth: m.existingGroupId ? s.calendarMonth : new Date(day.getFullYear(), day.getMonth(), 1),
       }));
       await reloadData();
       setState({ modal: null, selectedRowId: result.records.length ? result.records[0].id : null });
-      showToast(result.records.length ? 'Группа и аттестуемые сохранены' : 'Группа создана');
+      showToast(m.existingGroupId ? 'Аттестуемые добавлены в группу' : 'Группа и аттестуемые сохранены');
     } catch (err) {
       setState({ saving: false });
       handleError(err);
@@ -759,19 +797,6 @@
     if (previous) { previous.classList.remove('is-selected'); previous.setAttribute('aria-selected', 'false'); }
     if (current) { current.classList.add('is-selected'); current.setAttribute('aria-selected', 'true'); }
     m.activeAttesteeIndex = index;
-    const controls = elModalRoot.querySelector('.new-group-defaults');
-    const attendee = m.attendees[index];
-    if (!controls) return;
-    const missing = m.validationAttempted ? missingAttesteeFields(attendee) : {};
-    const dateButton = controls.querySelector('[data-cal="record"]');
-    const timeButton = controls.querySelector('[data-click="onToggleTimeDropdown"]');
-    const typeButton = controls.querySelector('[data-dd="vtype"]');
-    dateButton.querySelector('span').textContent = attendee.date ? formatDateRu(attendee.date) : 'Выберите дату';
-    timeButton.querySelector('span').textContent = attendee.time || '00:00';
-    typeButton.querySelector('span').textContent = nameById(state.TYPES, attendee.typeId);
-    dateButton.classList.toggle('attestee-invalid', !!missing.date);
-    timeButton.classList.toggle('attestee-invalid', !!missing.time);
-    typeButton.classList.toggle('attestee-invalid', !!missing.type);
   }
   H.onSelectAttestee = (e) => {
     const index = Number(e.currentTarget.getAttribute('data-row'));
@@ -804,7 +829,6 @@
     const id = Number(e.currentTarget.getAttribute('data-id'));
     const row = findRow(id);
     if (!row || !canDelete(row)) return;
-    if (!window.confirm('Удалить запись «' + row.fio + '»?')) return;
     try {
       await api.del('/api/journal/' + id);
       setState((s) => ({
@@ -815,6 +839,29 @@
       showToast('Запись удалена');
       reloadData().catch(() => {});
     } catch (err) {
+      handleError(err);
+    }
+  };
+  H.onDeleteGroupClick = async (e) => {
+    e.stopPropagation();
+    if (isFired() || !state.RIGHTS.grpDel) return;
+    const groupId = Number(e.currentTarget.getAttribute('data-group-id'));
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) return;
+    e.currentTarget.disabled = true;
+    try {
+      await api.del('/api/groups/' + groupId);
+      setState((s) => ({
+        BLOCKS: s.BLOCKS.filter((group) => group.id !== groupId),
+        journal: s.journal.filter((row) => row.blockId !== groupId),
+        tasks: s.tasks.filter((row) => row.blockId !== groupId),
+        selectedBlockId: s.selectedBlockId === groupId ? null : s.selectedBlockId,
+        selectedRowId: s.journal.some((row) => row.id === s.selectedRowId && row.blockId === groupId)
+          ? null : s.selectedRowId,
+      }));
+      showToast('Группа и её записи удалены');
+      reloadData().catch(handleError);
+    } catch (err) {
+      e.currentTarget.disabled = false;
       handleError(err);
     }
   };
@@ -890,8 +937,41 @@
       orgFPhone: o.phone, orgFContact: o.contact, orgFEmail: o.email, orgFNote: o.note || '',
     });
   }
+  let organizationsRevision = 0;
+  let organizationRefreshRunning = false;
   async function reloadOrganizations() {
+    organizationsRevision += 1;
     applyOrganizations(await api.get('/api/organizations'));
+  }
+  function organizationFormDirty() {
+    if (state.orgIsNew) return true;
+    const current = state.ORG_BY_ID[state.selOrgId];
+    if (!current) return false;
+    return state.orgFName !== current.name || state.orgFAddress !== current.address ||
+      state.orgFPhone !== current.phone || state.orgFContact !== current.contact ||
+      state.orgFEmail !== current.email || state.orgFNote !== (current.note || '');
+  }
+  async function autoRefreshOrganizations() {
+    if (state.modal?.type !== 'references' || state.saving ||
+        document.visibilityState === 'hidden' || organizationRefreshRunning) return;
+    organizationRefreshRunning = true;
+    const revision = organizationsRevision;
+    try {
+      const list = await api.get('/api/organizations');
+      if (revision !== organizationsRevision || state.modal?.type !== 'references' || state.saving ||
+          JSON.stringify(list) === JSON.stringify(state.ORGANIZATIONS)) return;
+      const selectedId = state.selOrgId;
+      const selectedBefore = state.ORG_BY_ID[selectedId];
+      const selectedAfter = list.find((o) => o.id === selectedId);
+      const preserveDraft = organizationFormDirty();
+      applyOrganizations(list);
+      if (!preserveDraft && (selectedId !== (selectedAfter || list[0])?.id ||
+          JSON.stringify(selectedBefore) !== JSON.stringify(selectedAfter))) {
+        loadOrg((selectedAfter || list[0])?.id ?? null);
+      }
+    } finally {
+      organizationRefreshRunning = false;
+    }
   }
   H.onOrgSelect = (e) => loadOrg(Number(e.currentTarget.getAttribute('data-id')));
   H.onOrgSearchChange = (e) => setState({ orgSearch: e.target.value, orgQuery: e.target.value });
@@ -949,23 +1029,13 @@
       handleError(err);
     }
   };
-  H.onOrgRefresh = async () => {
-    try {
-      await reloadOrganizations();
-      setState({ orgSearch: '', orgQuery: '' });
-      loadOrg(state.selOrgId != null && state.ORG_BY_ID[state.selOrgId] ? state.selOrgId : (state.ORGANIZATIONS[0] || {}).id);
-      showToast('Список перечитан из базы');
-    } catch (err) {
-      handleError(err);
-    }
-  };
-
   
   H.onReferences = () => {
     if (isFired() || !state.RIGHTS.menuRefs) return;
     setState({ modal: { type: 'references' }, orgSearch: '', orgQuery: '' });
     const first = state.ORG_BY_ID[state.selOrgId] ? state.selOrgId : (state.ORGANIZATIONS[0] || {}).id;
     loadOrg(first);
+    autoRefreshOrganizations().catch(() => {});
   };
   H.onOpenJournalAction = (e) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -1007,13 +1077,14 @@
     clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     prev: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
     next: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
-    note: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4c-5.1 0-9.3 3.4-9.3 7.5 0 2.5 1.5 4.7 3.7 6-.2 1.3-.8 2.5-1.8 3.4-.3.3-.1.8.3.7 2.1-.1 3.9-.9 5.3-2 .6.1 1.2.1 1.8.1 5.1 0 9.3-3.3 9.3-7.4S17.1 3.4 12 3.4z"/></svg>',
+    note: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4.5" width="14" height="18" rx="2.4"/><rect x="9" y="3" width="6" height="3" rx="1" fill="white"/><path d="M10 10.5h4.5M10 14h4.5M10 17.5h4.5"/><circle cx="8" cy="10.5" r=".7" fill="currentColor" stroke="none"/><circle cx="8" cy="14" r=".7" fill="currentColor" stroke="none"/><circle cx="8" cy="17.5" r=".7" fill="currentColor" stroke="none"/></svg>',
     trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+    trashTable: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+    trashGroup: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6"/><path d="M6 6l.8 13.1A2 2 0 0 0 8.8 21h6.4a2 2 0 0 0 2-1.9L18 6"/><path d="M9 10.5v6.5M12 10.5v6.5M15 10.5v6.5"/></svg>',
     trash15: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
     plus: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
     save: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
     undo: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M4 9h10a6 6 0 0 1 0 12h-4"/></svg>',
-    refresh: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>',
     searchSm: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
   };
 
@@ -1029,6 +1100,11 @@
   }
   const idOpts = (list, current, field) =>
     (list || []).map((x) => ({ value: x.id, label: x.name, field, selected: x.id === current }));
+  const fixedCategoryOpts = (currentName) => Array.from({ length: 8 }, (_, index) => {
+    const number = index + 1;
+    const name = 'Категория ' + number;
+    return { value: number, label: name, field: 'fixedCategoryNumber', selected: name === currentName };
+  });
 
   
   function popCalHtml(activeKey, mkKey) {
@@ -1102,12 +1178,7 @@
         ? s.modal.attendees[s.ddRowIndex] : s.modal || {};
       let opts = [];
       if (s.openDD === 'vtype' || s.openDD === 'type') opts = idOpts(s.TYPES, m.typeId, 'typeId');
-      else if (s.openDD === 'cat') {
-        const categories = s.categoryFilter
-          ? s.CATEGORIES.filter((item) => item.name.toLocaleLowerCase().includes(s.categoryFilter.trim().toLocaleLowerCase()))
-          : s.CATEGORIES;
-        opts = idOpts(categories, m.categoryId, 'categoryId');
-      }
+      else if (s.openDD === 'categoryFixed') opts = fixedCategoryOpts(m.categoryName || (m.categoryId ? nameById(state.CATEGORIES, m.categoryId) : ''));
       else if (s.openDD === 'status') opts = idOpts(s.STATUSES, m.statusId, 'statusId');
       else if (s.openDD === 'exec') opts = s.EXECUTORS.map((x) => ({ value: x.id, label: x.short_name, field: 'executorId', selected: m.executorId === x.id }));
       else if (s.openDD === 'org') opts = s.ORGANIZATIONS.map((o) => ({ value: o.id, label: o.name, field: 'orgId', selected: m.orgId === o.id }));
@@ -1172,6 +1243,9 @@
   function journalHtml(rows) {
     const s = state;
     const showDelete = !isFired() && !!s.RIGHTS.jrnDel;
+    const showGroupDelete = !isFired() && !!s.RIGHTS.grpDel;
+    const canAdd = canAddToGroup();
+    const columnCount = showDelete ? 11 : 10;
     return rows.map((r, idx) => {
       const org = s.ORG_BY_ID[r.orgId];
       const cls = ['jr-row'];
@@ -1179,13 +1253,20 @@
       else if (s.selectedRowId === r.id) cls.push('is-selected');
       else if (idx % 2 === 1) cls.push('is-alt');
       const hasNote = (r.note || '').trim();
+      const groupHeader = showGroupDelete && (idx === 0 || rows[idx - 1].blockId !== r.blockId)
+        ? '<tr class="jr-group-head" data-mk="group-' + r.blockId + '"><td colspan="' + columnCount + '">' +
+            '<div class="jr-group-head__inner"><span class="jr-group-head__label">Группа · ' +
+              esc(formatDateRu(r.date)) + ' · ' + esc(r.time) + ' · ' + esc(r.type) + '</span>' +
+              '<button class="jr-group-delete" type="button" title="Удалить всю группу и все её записи" aria-label="Удалить всю группу и все её записи" data-group-id="' + r.blockId + '" data-click="onDeleteGroupClick">' +
+                ICON.trashGroup + '<span>Удалить группу</span></button>' +
+            '</div></td></tr>'
+        : '';
       const delCell = canDelete(r)
-        ? '<td><button class="row-icon row-icon--del" type="button" title="Удалить запись" data-id="' + r.id + '" data-click="onDeleteRowClick">' + ICON.trash + '</button></td>'
+        ? '<td><button class="row-icon row-icon--del" type="button" title="Удалить запись" aria-label="Удалить запись" data-id="' + r.id + '" data-click="onDeleteRowClick">' + ICON.trashTable + '</button></td>'
         : '<td></td>';
 
-      return '<tr class="' + cls.join(' ') + '" data-mk="r' + r.id + '" data-id="' + r.id + '" data-click="onRowClick">' +
-          '<td class="col-id">' + r.id + '</td>' +
-          '<td><span class="tag ' + typeClass(r.type) + '">' + esc(r.type) + '</span></td>' +
+      const rowHtml = '<tr class="' + cls.join(' ') + '" data-mk="r' + r.id + '" data-id="' + r.id + '" data-click="onRowClick">' +
+          '<td class="col-type"><span class="tag ' + typeClass(r.type) + '">' + esc(r.type) + '</span></td>' +
           '<td>' + formatDateShort(r.date) + '</td>' +
           '<td>' + esc(r.time) + '</td>' +
           '<td>' + r.number + '</td>' +
@@ -1195,62 +1276,71 @@
           '<td>' + esc(r.executor) + '</td>' +
           '<td><span class="status status--' + statusClass(r.statusFinal) + '">' + esc(r.status) + '</span></td>' +
           '<td>' +
-            '<button class="row-icon' + (hasNote ? '' : ' row-icon--off') + '" type="button" title="Примечание"' +
+            '<button class="row-icon row-icon--note' + (hasNote ? '' : ' row-icon--off') + '" type="button" title="Примечание" aria-label="Открыть примечание"' +
             ' data-id="' + r.id + '" data-click="onNoteClick">' + ICON.note + '</button>' +
           '</td>' +
           (showDelete ? delCell : '') +
         '</tr>';
+      const next = rows[idx + 1];
+      if (next && next.blockId === r.blockId) return groupHeader + rowHtml;
+      const addButton = canAdd
+        ? '<a class="jr-group-add" href="' + esc(elNavNewGroup.getAttribute('href') + '?group_id=' + encodeURIComponent(r.blockId)) + '" title="Добавить аттестуемых в эту группу" aria-label="Добавить аттестуемых в эту группу" data-group-id="' + r.blockId + '" data-click="onAddAttesteeToGroup">' +
+            '<span class="jr-group-add__icon" aria-hidden="true">' + ICON.plus + '</span>' +
+            '<span>Добавить в группу выше</span>' +
+          '</a>'
+        : '';
+      return groupHeader + rowHtml + '<tr class="jr-group-gap" data-mk="gap-' + r.blockId + '-' + idx + '"><td colspan="' + columnCount + '"><div class="jr-group-gap__inner">' + addButton + '</div></td></tr>';
     }).join('');
   }
 
   
   function modalNewBlockHtml(m) {
-    const groupStep = m.step === 'group';
-    const selected = groupStep ? m : m.attendees[m.activeAttesteeIndex] || m;
-    const missing = !groupStep && m.validationAttempted && m.attendees[m.activeAttesteeIndex]
-      ? missingAttesteeFields(selected) : {};
-    const fields = '<div class="' + (groupStep ? 'new-group-form-fields' : 'new-group-defaults') + '">' +
+    const appendingToGroup = !!m.existingGroupId;
+    const groupFieldsDisabled = appendingToGroup ? ' disabled' : '';
+    const fields = '<div class="new-group-defaults">' +
       '<div class="field field--rel">' +
         '<span class="field__label">Дата</span>' +
-        '<button class="select-btn select-btn--modal' + (missing.date ? ' attestee-invalid' : '') + '" type="button" data-cal="record" data-click="onOpenCal">' +
-          '<span>' + (selected.date ? formatDateRu(selected.date) : 'Выберите дату') + '</span>' + ICON.calendar +
+        '<button class="select-btn select-btn--modal' + (m.groupValidationAttempted && !m.date ? ' attestee-invalid' : '') + '" type="button" data-cal="record" data-click="onOpenCal"' + groupFieldsDisabled + '>' +
+          '<span>' + (m.date ? formatDateRu(m.date) : 'Выберите дату') + '</span>' + ICON.calendar +
         '</button>' +
       '</div>' +
       '<div class="field field--rel">' +
         '<span class="field__label">Время</span>' +
-        '<button class="select-btn select-btn--modal' + (missing.time ? ' attestee-invalid' : '') + '" type="button" data-click="onToggleTimeDropdown">' +
-          '<span>' + esc(selected.time) + '</span>' + ICON.clock +
+        '<button class="select-btn select-btn--modal' + (m.groupValidationAttempted && !m.time ? ' attestee-invalid' : '') + '" type="button" data-click="onToggleTimeDropdown"' + groupFieldsDisabled + '>' +
+          '<span>' + esc(m.time || '00:00') + '</span>' + ICON.clock +
         '</button>' +
       '</div>' +
       '<div class="field">' +
         '<span class="field__label">Вид проверки</span>' +
         '<div style="position:relative;">' +
-          '<button class="select-btn select-btn--modal' + (missing.type ? ' attestee-invalid' : '') + '" type="button" data-dd="vtype" data-click="onOpenDD">' +
-            '<span>' + esc(nameById(state.TYPES, selected.typeId)) + '</span>' + ICON.chevDown +
+          '<button class="select-btn select-btn--modal' + (m.groupValidationAttempted && !m.typeId ? ' attestee-invalid' : '') + '" type="button" data-dd="vtype" data-click="onOpenDD"' + groupFieldsDisabled + '>' +
+            '<span>' + esc(nameById(state.TYPES, m.typeId)) + '</span>' + ICON.chevDown +
           '</button>' +
         '</div>' +
       '</div>' +
       '</div>';
-    if (groupStep) {
-      return '<p class="modal-title">Новая проверочная группа</p>' + fields +
+    const groupFields = appendingToGroup ? '' : fields;
+    if (!canCreateRecords()) {
+      return '<p class="modal-title">' + (appendingToGroup ? 'Добавление в группу' : 'Новая проверочная группа') + '</p>' + groupFields +
         '<div class="modal-foot">' +
           '<button class="btn" type="button" data-click="onCloseModal">Отмена</button>' +
-          (canCreateRecords()
-            ? '<button class="btn btn--primary" type="button" data-click="onNextNewGroup">Далее</button>'
-            : '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Создать</button>') +
+          (!appendingToGroup ? '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Создать</button>' : '') +
         '</div>';
     }
-    return '<p class="modal-title">Новая проверочная группа</p>' +
-      '<p class="modal-sub">Выберите аттестуемого в таблице. Верхние поля изменяют только выбранную строку.</p>' +
-      fields +
+    return '<p class="modal-title">' + (appendingToGroup ? 'Добавить аттестуемых в группу' : 'Новая проверочная группа') + '</p>' +
+      '<p class="modal-sub">' + (appendingToGroup
+        ? 'Новые аттестуемые будут добавлены в эту группу.'
+        : 'Дата, время и вид проверки задаются здесь сразу для всех аттестуемых.') + '</p>' +
+      groupFields +
       '<div class="attestee-table-wrap"><table class="attestee-table"><thead><tr>' +
         '<th>№</th><th>ФИО</th><th>Организация</th><th>Категория</th><th>Вид проверки</th>' +
         '<th>Дата</th><th>Время</th><th>Исполнитель</th><th>Примечание</th><th>Статус</th><th></th>' +
       '</tr></thead><tbody>' + m.attendees.map(attesteeRowHtml).join('') + '</tbody></table></div>' +
       '<button class="attestee-add" type="button" data-click="onAddAttestee">' + ICON.plus + ' Добавить аттестуемого</button>' +
       '<div class="modal-foot">' +
-        '<button class="btn" type="button" data-click="onBackNewGroup">Назад</button>' +
-        '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>Сохранить группу</button>' +
+        '<button class="btn" type="button" data-click="onCloseModal">Отмена</button>' +
+        '<button class="btn btn--primary" type="button" data-click="onSaveNewBlock"' + (state.saving ? ' disabled' : '') + '>' +
+          (appendingToGroup ? 'Добавить в группу' : 'Сохранить группу') + '</button>' +
       '</div>';
   }
 
@@ -1267,15 +1357,11 @@
       '<td class="attestee-table__number">' + (index + 1) + '</td>' +
       '<td><input class="input attestee-input' + invalid('fio') + '" type="text" maxlength="150" placeholder="Новый аттестуемый" value="' + esc(row.fio) + '"' + attr + ' data-input="onAttesteeFioChange"></td>' +
       '<td>' + select('org', org ? org.name : 'Выберите') + '</td>' +
-      '<td><div class="category-combo"><input class="select-btn select-btn--modal category-combo__input attestee-input' + invalid('category') + '" type="text" maxlength="100" placeholder="Выберите категорию"' +
-        ' value="' + esc(row.categoryName || (row.categoryId ? nameById(state.CATEGORIES, row.categoryId) : '')) + '"' + attr +
-        ' data-input="onRecordCategoryInput" data-click="onRecordCategoryClick">' +
-        '<span class="category-combo__chev" aria-hidden="true">' + ICON.chevDown + '</span></div></td>' +
-      '<td>' + select('type', nameById(state.TYPES, row.typeId)) + '</td>' +
-      '<td><button class="select-btn select-btn--modal attestee-select' + invalid('date') + '" type="button" data-cal="record"' + attr +
-        ' data-click="onOpenCal"><span>' + (row.date ? row.date.split('-').reverse().join('.') : 'Выберите') + '</span>' + ICON.calendar + '</button></td>' +
-      '<td><button class="select-btn select-btn--modal attestee-select' + invalid('time') + '" type="button"' + attr +
-        ' data-click="onToggleTimeDropdown"><span>' + esc(row.time) + '</span>' + ICON.clock + '</button></td>' +
+      '<td><button class="select-btn select-btn--modal attestee-select' + invalid('category') + '" type="button" data-dd="categoryFixed"' + attr +
+        ' data-click="onOpenDD"><span class="select-btn__text">' + esc(row.categoryName || (row.categoryId ? nameById(state.CATEGORIES, row.categoryId) : 'Выберите')) + '</span>' + ICON.chevDown + '</button></td>' +
+      '<td><span class="attestee-value">' + esc(nameById(state.TYPES, state.modal.typeId) || '—') + '</span></td>' +
+      '<td><span class="attestee-value">' + (state.modal.date ? esc(state.modal.date.split('-').reverse().join('.')) : '—') + '</span></td>' +
+      '<td><span class="attestee-value">' + esc(state.modal.time || '—') + '</span></td>' +
       '<td>' + select('exec', row.executorName || 'Выберите') + '</td>' +
       '<td><textarea class="input attestee-note" rows="2" maxlength="250" placeholder="Примечание"' + attr +
         ' data-input="onAttesteeNoteChange">' + esc(row.note || '') + '</textarea></td>' +
@@ -1289,7 +1375,7 @@
     const s = state;
     const fieldsLocked = m.readOnly || m.statusOnly;
     const dis = fieldsLocked ? ' disabled' : '';
-    const statusDis = m.readOnly ? ' disabled' : '';
+    const statusDis = m.readOnly || m.statusLocked ? ' disabled' : '';
     const orgLabel = m.orgId && s.ORG_BY_ID[m.orgId] ? s.ORG_BY_ID[m.orgId].name : '—';
 
     let sub = '';
@@ -1315,12 +1401,9 @@
         '</div>' +
         '<div class="field">' +
           '<span class="field__label">Категория</span>' +
-          '<div class="category-combo">' +
-            '<input class="select-btn select-btn--modal category-combo__input" type="text" maxlength="100"' +
-              ' value="' + esc(m.categoryName || nameById(s.CATEGORIES, m.categoryId)) + '" data-input="onRecordCategoryInput"' +
-              ' data-click="onRecordCategoryClick"' + dis + '>' +
-            '<span class="category-combo__chev" aria-hidden="true">' + ICON.chevDown + '</span>' +
-          '</div>' +
+          '<button class="select-btn select-btn--modal" type="button" data-dd="categoryFixed" data-click="onOpenDD"' + dis + '>' +
+            '<span class="select-btn__text">' + esc(m.categoryName || (m.categoryId ? nameById(s.CATEGORIES, m.categoryId) : 'Выберите')) + '</span>' + ICON.chevDown +
+          '</button>' +
         '</div>' +
       '</div>' +
 
@@ -1432,11 +1515,11 @@
       '<tr class="jr-row' + (s.selOrgId === o.id ? ' is-selected' : (o.alt ? ' is-alt' : '')) + '"' +
       ' data-mk="o' + o.id + '" data-id="' + o.id + '" data-click="onOrgSelect">' +
         '<td class="col-no">' + o.no + '</td>' +
-        '<td class="col-name">' + esc(o.name) + '</td>' +
-        '<td>' + esc(o.address) + '</td>' +
-        '<td>' + esc(o.phone) + '</td>' +
-        '<td>' + esc(o.contact) + '</td>' +
-        '<td>' + esc(o.email) + '</td>' +
+        '<td class="col-name"><span class="ref-mobile-fade">' + esc(o.name) + '</span></td>' +
+        '<td class="col-address"><span class="ref-mobile-fade">' + esc(o.address) + '</span></td>' +
+        '<td class="col-phone"><span class="ref-mobile-fade">' + esc(o.phone) + '</span></td>' +
+        '<td class="col-contact"><span class="ref-mobile-fade">' + esc(o.contact) + '</span></td>' +
+        '<td class="col-email"><span class="ref-mobile-fade">' + esc(o.email) + '</span></td>' +
       '</tr>').join('');
 
     const formField = (label, value, handler, mk, maxlength, type, attrs) =>
@@ -1464,7 +1547,6 @@
               '<button class="tool-btn tool-btn--action tool-btn--primary" type="button" title="Сохранить" data-click="onOrgSave">' + ICON.save + '<span>Сохранить</span></button>' +
               '<button class="tool-btn tool-btn--action" type="button" title="Отмена" data-click="onOrgCancel">' + ICON.undo + '<span>Отмена</span></button>' +
               '<span class="ref-toolbar__spacer"></span>' +
-              '<button class="tool-btn tool-btn--action" type="button" title="Обновить список" data-click="onOrgRefresh">' + ICON.refresh + '<span>Обновить</span></button>' +
               '<button class="tool-btn tool-btn--action ' + (selOrg ? 'tool-btn--del' : 'tool-btn--off') + '"' +
               ' type="button" title="Удалить организацию" data-click="onOrgDelete">' + ICON.trash15 + '<span>Удалить</span></button>' +
             '</div>' +
@@ -1473,8 +1555,8 @@
           '<div class="ref-table-box">' +
             '<table class="jr-table jr-table--ref">' +
               '<thead><tr>' +
-                '<th class="col-no">id</th><th>Наименование</th><th>Адрес</th>' +
-                '<th>Телефон</th><th>Контактное лицо</th><th>e-mail</th>' +
+                '<th class="col-no">id</th><th class="col-name">Наименование</th><th class="col-address">Адрес</th>' +
+                '<th class="col-phone">Телефон</th><th class="col-contact">Контактное лицо</th><th class="col-email">e-mail</th>' +
               '</tr></thead>' +
               '<tbody data-mk="orgbody">' + tbody + '</tbody>' +
             '</table>' +
@@ -1519,7 +1601,8 @@
     else if (m.type === 'org') inner = modalOrgHtml(m);
     else if (m.type === 'references') { inner = modalReferencesHtml(); extraClass = ' jr-modal-card--wide jr-modal-card--references'; }
 
-    return '<div class="modal-overlay" data-mk="overlay">' +
+    const overlayClass = m.type === 'references' ? ' modal-overlay--references' : '';
+    return '<div class="modal-overlay' + overlayClass + '" data-mk="overlay">' +
         '<div class="jr-modal-card' + extraClass + '" data-mk="card-' + m.type + '">' + inner + '</div>' +
       '</div>';
   }
@@ -1559,12 +1642,17 @@
   const elMonthLabel = el('monthLabel'), elCalWeekdays = el('calWeekdays'), elCalCells = el('calCells');
   const elSelectedDate = el('selectedDate');
   const elTasksBody = el('tasksBody'), elTasksEmpty = el('tasksEmpty');
+  const elTaskViewPicker = document.querySelector('.task-view-picker');
+  const elTaskTabsList = document.querySelector('.task-tabs');
+  const elTasksPanel = el('tasksPanel');
+  const elTaskPanelScrim = el('taskPanelScrim');
+  const elTaskTabs = TASK_VIEWS.map((view) => el(TASK_TAB_IDS[view]));
   const elJournalBody = el('journalBody'), elJournalEmpty = el('journalEmpty'), elThDelete = el('thDelete');
   const elSearchFio = el('searchFio'), elSearchClear = el('searchClear');
   const elExecLabel = el('execLabel'), elExecChev = el('execChev'), elExecMenu = el('execMenu');
   const elDateFromLabel = el('dateFromLabel'), elDateToLabel = el('dateToLabel');
   const elDatesPair = el('datesPair'), elCalFromBtn = el('calFromBtn'), elCalToBtn = el('calToBtn');
-  const elChkMyTasks = el('chkMyTasks'), elChkCompleted = el('chkCompleted'), elChkNoLimit = el('chkNoLimit');
+  const elChkNoLimit = el('chkNoLimit');
   const elOrgName = el('orgName'), elOrgPhone = el('orgPhone'), elOrgContact = el('orgContact'), elOrgEmail = el('orgEmail');
   const elNavNewGroup = el('navNewGroup'), elNavRefs = el('navRefs'), elNavUsers = el('navUsers');
   const elMobileMenu = el('mobileMenu'), elPopovers = el('popovers');
@@ -1576,12 +1664,6 @@
     if (row && !target.closest('.attestee-remove')) selectAttestee(Number(row.getAttribute('data-row')));
   }, true);
 
-  function setRadio(node, on) {
-    node.classList.toggle('is-on', on);
-    const dot = node.firstElementChild;
-    if (on && !dot) node.innerHTML = '<span class="radio-box__dot"></span>';
-    else if (!on && dot) node.innerHTML = '';
-  }
   function setCheck(node, on) {
     node.classList.toggle('is-on', on);
     const mark = node.firstElementChild;
@@ -1590,6 +1672,8 @@
   }
 
   let weekdaysDrawn = false;
+  let renderedTasksView = null;
+  let renderedTasksDropdownOpen = false;
 
   function render() {
     const s = state;
@@ -1638,8 +1722,33 @@
     elCalFromBtn.disabled = s.noDateLimit;
     elCalToBtn.disabled = s.noDateLimit;
 
-    setRadio(elChkMyTasks, s.myTasksOnly);
-    setRadio(elChkCompleted, s.completedOnly);
+    const taskViews = availableTaskViews();
+    elTaskViewPicker.classList.toggle('is-open', s.tasksDropdownOpen);
+    elTaskTabsList.classList.toggle('task-tabs--centered', !taskViews.includes('others'));
+    elTasksPanel.hidden = !s.tasksDropdownOpen;
+    elTaskPanelScrim.hidden = !s.tasksDropdownOpen;
+    if (s.tasksDropdownOpen && !renderedTasksDropdownOpen) {
+      elTasksPanel.classList.remove('task-panel--rising');
+      void elTasksPanel.offsetWidth;
+      elTasksPanel.classList.add('task-panel--rising');
+    }
+    renderedTasksDropdownOpen = s.tasksDropdownOpen;
+    elTaskTabs.forEach((tab) => {
+      const view = tab.getAttribute('data-task-view');
+      const visible = taskViews.includes(view);
+      const selected = view === s.tasksView;
+      tab.hidden = !visible;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected && visible ? 0 : -1;
+    });
+    elTasksPanel.setAttribute('aria-labelledby', TASK_TAB_IDS[s.tasksView]);
+    elTasksPanel.dataset.view = s.tasksView;
+    if (renderedTasksView !== s.tasksView) {
+      elTasksPanel.classList.remove('task-panel--rising');
+      void elTasksPanel.offsetWidth;
+      elTasksPanel.classList.add('task-panel--rising');
+      renderedTasksView = s.tasksView;
+    }
     setCheck(elChkNoLimit, s.noDateLimit);
 
     
@@ -1675,5 +1784,8 @@
 
   if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', onNotificationMessage);
   bindEvents(document);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') autoRefreshOrganizations().catch(() => {});
+  });
   bootstrap();
 })();

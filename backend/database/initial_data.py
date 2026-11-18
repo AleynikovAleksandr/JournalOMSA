@@ -1,17 +1,8 @@
-"""Инициализация данных: справочники (ТЗ, раздел 11) и первичная учётная запись администратора.
-
-Запуск: python -m database.initial_data (рабочий каталог — backend/).
-
-Скрипт идемпотентен: существующие значения не дублируются, поэтому его можно
-выполнять при каждом развёртывании (init-контейнер пода web в Kubernetes).
-Таблицы, которых нет в базе, создаются по моделям; в PostgreSQL схему при первом
-запуске создаёт database/schema.sql, поэтому этот шаг ничего не меняет.
-"""
-
 from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Iterable
 from uuid import uuid4
 
 from sqlalchemy import select, text
@@ -20,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.references import Category, Solution, TypeCheck
 from app.models.user import User, UserGroup
 from app.schemas.settings import Settings
+from app.services.access_control.principal import ADMIN_GROUP_NAME, SYSTEM_ADMIN_FIO
 from app.services.access_control.rights import FULL_RIGHTS, format_rules
 from core.clock import SystemClock, truncate_to_ms
 from core.config import get_settings
@@ -29,69 +21,70 @@ from database.session import Database, create_database_app
 
 logger = logging.getLogger("omsa.initial_data")
 
-CATEGORIES = ("Оперативный персонал", "Ремонтный персонал", "Диспетчер")
+CATEGORIES = tuple(f"Категория {number}" for number in range(1, 9))
 TYPE_CHECKS = ("ПФО", "Физо", "ЗУН")
-# (наименование, завершает задачу)
 SOLUTIONS = (("Готов", True), ("В процессе", False))
-# (наименование, группа архива)
-USER_GROUPS = (
-    ("Администраторы", False),
-    ("Аттестационная комиссия", False),
-    ("Инспекторы", False),
+STARTUP_USER_GROUPS = (
+    (ADMIN_GROUP_NAME, False),
     ("Архив (уволенные)", True),
 )
-ADMIN_GROUP = USER_GROUPS[0][0]
-ADMIN_FIO = "Администратор системы"
-
-# Номер блокировки PostgreSQL: init-контейнеры нескольких подов не выполняют скрипт одновременно
 ADVISORY_LOCK_ID = 7_310_001
 
 
-def _ensure_names(session: Session, model, names) -> None:
-    existing = set(session.scalars(select(model.name)))
-    for name in names:
-        if name not in existing:
-            session.add(model(name=name))
+class InitialDataSeeder:
+    def __init__(self, session: Session) -> None:
+        self.session = session
 
+    def _add_missing(self, model: type, rows: Iterable[dict[str, object]]) -> None:
+        existing = set(self.session.scalars(select(model.name)))
+        for row in rows:
+            name = str(row["name"])
+            if name not in existing:
+                self.session.add(model(**row))
+                existing.add(name)
 
-def seed_reference_data(session: Session) -> None:
-    _ensure_names(session, Category, CATEGORIES)
-    _ensure_names(session, TypeCheck, TYPE_CHECKS)
-    existing_solutions = set(session.scalars(select(Solution.name)))
-    for name, is_final in SOLUTIONS:
-        if name not in existing_solutions:
-            session.add(Solution(name=name, is_final=is_final))
-    existing_groups = set(session.scalars(select(UserGroup.name)))
-    for name, is_archive in USER_GROUPS:
-        if name not in existing_groups:
-            session.add(UserGroup(name=name, is_archive=is_archive))
-    session.flush()
+    def seed_references(
+        self,
+        *,
+        user_groups: tuple[tuple[str, bool], ...] = STARTUP_USER_GROUPS,
+    ) -> None:
+        self._add_missing(Category, ({"name": name} for name in CATEGORIES))
+        self._add_missing(TypeCheck, ({"name": name} for name in TYPE_CHECKS))
+        self._add_missing(Solution, ({"name": name, "is_final": is_final} for name, is_final in SOLUTIONS))
+        self._add_missing(UserGroup, ({"name": name, "is_archive": is_archive} for name, is_archive in user_groups))
+        self.session.flush()
 
-
-def ensure_admin(session: Session, settings: Settings, hasher: Argon2PasswordHasher) -> bool:
-    """Создаёт администратора из ADMIN_LOGIN / ADMIN_PASSWORD, если такого логина ещё нет."""
-    if not settings.admin_login or not settings.admin_password:
-        return False
-    login = settings.admin_login.strip().lower()
-    if session.scalar(select(User).where(User.login == login)) is not None:
-        return False
-    group = session.scalar(select(UserGroup).where(UserGroup.name == ADMIN_GROUP))
-    if group is None:
-        raise RuntimeError(f"Не найдена группа «{ADMIN_GROUP}»")
-    session.add(
-        User(
-            uuid=uuid4(),
-            fio=ADMIN_FIO,
-            login=login,
-            password_hash=hasher.hash(settings.admin_password),
-            password_changed_at=truncate_to_ms(SystemClock().now()),
-            rules=format_rules(FULL_RIGHTS),
-            group=group,
-            failed_login_attempts=0,
+    def ensure_admin(self, settings: Settings, hasher: Argon2PasswordHasher) -> bool:
+        if not settings.admin_login or not settings.admin_password:
+            return False
+        login = settings.admin_login.strip().lower()
+        if self.session.scalar(select(User).where(User.login == login)) is not None:
+            return False
+        group = self.session.scalar(select(UserGroup).where(UserGroup.name == ADMIN_GROUP_NAME))
+        if group is None:
+            raise RuntimeError(f"Не найдена группа «{ADMIN_GROUP_NAME}»")
+        self.session.add(
+            User(
+                uuid=uuid4(),
+                fio=SYSTEM_ADMIN_FIO,
+                login=login,
+                password_hash=hasher.hash(settings.admin_password),
+                password_changed_at=truncate_to_ms(SystemClock().now()),
+                rules=format_rules(FULL_RIGHTS),
+                group=group,
+                failed_login_attempts=0,
+            )
         )
-    )
-    session.flush()
-    return True
+        self.session.flush()
+        return True
+
+
+def seed_reference_data(
+    session: Session,
+    *,
+    user_groups: tuple[tuple[str, bool], ...] = STARTUP_USER_GROUPS,
+) -> None:
+    InitialDataSeeder(session).seed_references(user_groups=user_groups)
 
 
 def run(settings: Settings) -> None:
@@ -105,8 +98,9 @@ def run(settings: Settings) -> None:
     with database.session() as session:
         if database.dialect == "postgresql":
             session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": ADVISORY_LOCK_ID})
-        seed_reference_data(session)
-        created = ensure_admin(session, settings, hasher)
+        seeder = InitialDataSeeder(session)
+        seeder.seed_references()
+        created = seeder.ensure_admin(settings, hasher)
         session.commit()
     logger.info("Справочники заполнены%s", ", создан администратор" if created else "")
     database.engine.dispose()

@@ -10,8 +10,12 @@ from app.models.user import User, UserGroup
 from app.schemas.commands import UserCreateInput, UserUpdateInput
 from app.schemas.responses import Conflict, NotFound, PermissionDenied, ValidationFailed
 from app.services.access_control.access import AccessPolicy
-from app.services.access_control.principal import Principal
-from app.services.access_control.rights import DEFAULT_RIGHTS, MENU_SETTINGS, format_rules, parse_rules
+from app.services.access_control.principal import (
+    ADMIN_GROUP_NAME, SYSTEM_ADMIN_LOGIN, Principal, allowed_rights_for_group,
+)
+from app.services.access_control.rights import (
+    ADMIN_ONLY_RIGHTS, DEFAULT_RIGHTS, MENU_SETTINGS, format_personal_rules, format_rules, parse_rules,
+)
 from app.services.authentication.auth import normalize_login
 from app.services.authentication.passwords import PasswordManager
 from core.clock import Clock
@@ -62,7 +66,7 @@ class UserService:
     # ---- проверки ----
     def _group(self, group_id: int) -> UserGroup:
         group = self._uow.user_groups.get(group_id)
-        if group is None:
+        if group is None or group.is_deleted:
             raise ValidationFailed("Группа не найдена", details={"group_id": ["Неизвестная группа"]})
         if group.is_archive:
             raise ValidationFailed(
@@ -71,8 +75,15 @@ class UserService:
             )
         return group
 
-    def _login(self, login: str, *, exclude_id: int | None = None) -> str:
+    def _login(
+        self, login: str, *, exclude_id: int | None = None, allow_system_admin: bool = False
+    ) -> str:
         normalized = normalize_login(login)
+        if normalized == SYSTEM_ADMIN_LOGIN and not allow_system_admin:
+            raise Conflict(
+                "Логин «admin» зарезервирован для стартовой учётной записи",
+                details={"login": ["Логин зарезервирован"]},
+            )
         if self._uow.users.login_taken(normalized, exclude_id=exclude_id):
             raise Conflict("Логин уже занят", details={"login": ["Логин уже используется"]})
         return normalized
@@ -94,7 +105,9 @@ class UserService:
             profile=(data.profile or "").strip() or None,
             group=group,
             is_fired=False,
-            rules=format_rules(parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS),
+            rules=format_rules(allowed_rights_for_group(
+                group.name, parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS
+            )),
             failed_login_attempts=0,
         )
         self._passwords.set_initial(user, data.password)
@@ -128,13 +141,19 @@ class UserService:
             self._not_self(user, "Нельзя отметить уволенной собственную учётную запись")
         if data.group_id != user.group_id:
             group = self._group(data.group_id)
-            next_rights = parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS
+            next_rights = allowed_rights_for_group(
+                group.name, parse_rules(group.rules) if group.rules is not None else DEFAULT_RIGHTS
+            )
             if user.id == self._principal.user_id and MENU_SETTINGS not in next_rights:
                 raise PermissionDenied("Нельзя перевести себя в группу без права «Настройки»")
             user.group = group
             user.rules = format_rules(next_rights)
         user.fio = data.fio.strip()
-        user.login = self._login(data.login, exclude_id=user.id)
+        user.login = self._login(
+            data.login,
+            exclude_id=user.id,
+            allow_system_admin=user.login == SYSTEM_ADMIN_LOGIN,
+        )
         user.profile = (data.profile or "").strip() or None
         self._set_fired(user, data.is_fired)
         if data.password:
@@ -154,8 +173,40 @@ class UserService:
         self._uow.commit()
         return user
 
+    def set_rights(self, user_id: int, rights: frozenset[str]) -> User:
+        self._policy.require(self._principal, "rights", "assign", NO_SETTINGS_RIGHT)
+        user = self.get(user_id)
+        if user.login == SYSTEM_ADMIN_LOGIN:
+            raise PermissionDenied("Личные права системного администратора изменить нельзя")
+        if user.group.name != ADMIN_GROUP_NAME and rights & ADMIN_ONLY_RIGHTS:
+            raise PermissionDenied("Эти права доступны только группе «Администраторы»")
+        if user.id == self._principal.user_id and MENU_SETTINGS not in rights:
+            raise PermissionDenied("Нельзя снять у себя право «Настройки»")
+        try:
+            user.rules = format_personal_rules(rights)
+        except ValueError as exc:
+            raise ValidationFailed(str(exc), details={"rights": [str(exc)]}) from exc
+        self._uow.commit()
+        return user
+
+    def reset_rights(self, user_id: int) -> User:
+        self._policy.require(self._principal, "rights", "assign", NO_SETTINGS_RIGHT)
+        user = self.get(user_id)
+        if user.login == SYSTEM_ADMIN_LOGIN:
+            raise PermissionDenied("Права системного администратора сбросить нельзя")
+        inherited = allowed_rights_for_group(
+            user.group.name, parse_rules(user.group.rules) if user.group.rules is not None else DEFAULT_RIGHTS
+        )
+        if user.id == self._principal.user_id and MENU_SETTINGS not in inherited:
+            raise PermissionDenied("Нельзя снять у себя право «Настройки»")
+        user.rules = format_rules(inherited)
+        self._uow.commit()
+        return user
+
     def _set_fired(self, user: User, is_fired: bool) -> None:
         if user.is_fired != is_fired:
+            if not is_fired and user.group.is_deleted:
+                user.group.is_deleted = False
             user.is_fired = is_fired
             # Права уволенного меняются сразу: открытые соединения закрываются
             self._close_connections(user)
@@ -171,5 +222,9 @@ class UserService:
         self._close_connections(user)
         self._uow.refresh_tokens.delete_for_user(user.uuid)
         self._uow.push.delete_for_user(user.uuid)
+        group = user.group
+        remove_hidden_group = group.is_deleted and self._uow.users.count_in_group(group.id) == 1
         self._uow.users.delete(user)
+        if remove_hidden_group:
+            self._uow.user_groups.delete(group)
         self._uow.commit()

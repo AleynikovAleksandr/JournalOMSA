@@ -51,8 +51,11 @@ class UserRepository(SqlRepository):
     def is_referenced_in_journal(self, user_id: int) -> bool:
         return bool(self._session.scalar(select(exists().where(JournalRecord.executor_id == user_id))))
 
-    def count_in_group(self, group_id: int) -> int:
-        return int(self._session.scalar(select(func.count()).where(User.group_id == group_id)) or 0)
+    def count_in_group(self, group_id: int, *, include_fired: bool = True) -> int:
+        stmt = select(func.count()).where(User.group_id == group_id)
+        if not include_fired:
+            stmt = stmt.where(User.is_fired.is_(False))
+        return int(self._session.scalar(stmt) or 0)
 
     def add(self, user: User) -> None:
         self._session.add(user)

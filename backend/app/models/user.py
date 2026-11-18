@@ -24,6 +24,11 @@ class UserGroup(db.Model):
         default=False,
         server_default=false(),
     )
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=false(),
+    )
 
 
 class User(db.Model):

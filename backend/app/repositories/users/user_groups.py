@@ -10,10 +10,18 @@ from app.repositories.base import SqlRepository
 
 class UserGroupRepository(SqlRepository):
     def list(self) -> list[UserGroup]:
-        return list(self._session.scalars(select(UserGroup).order_by(UserGroup.id)))
+        stmt = select(UserGroup).where(UserGroup.is_deleted.is_(False)).order_by(UserGroup.id)
+        return list(self._session.scalars(stmt))
 
     def get(self, group_id: int) -> UserGroup | None:
         return self._session.get(UserGroup, group_id)
+
+    def get_deleted_by_name(self, name: str) -> UserGroup | None:
+        stmt = select(UserGroup).where(
+            func.lower(UserGroup.name) == name.lower(),
+            UserGroup.is_deleted.is_(True),
+        )
+        return self._session.scalar(stmt)
 
     def name_taken(self, name: str, *, exclude_id: int | None = None) -> bool:
         conditions = [func.lower(UserGroup.name) == name.lower()]

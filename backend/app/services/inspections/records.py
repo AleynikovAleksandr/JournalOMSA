@@ -204,6 +204,8 @@ class JournalService:
         category, category_name, organization, type_check = self._references(data)
         executor = self._executor(data.executor_id, current_id=record.executor_id)
         solution = self._solution(data.solution_id if data.solution_name is None else None, data.solution_name)
+        if solution.id != record.solution_id and not self._rules.can_change_status(record):
+            raise PermissionDenied("Нет права изменять статус задачи")
         group = self._resolve_group(data, record.group_id, type_check.id)
 
         previous_executor = record.executor

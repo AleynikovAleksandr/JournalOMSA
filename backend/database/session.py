@@ -16,7 +16,7 @@ from typing import Any, Protocol
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Engine, MetaData, text
+from sqlalchemy import Engine, MetaData, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.schemas.settings import Settings
@@ -118,8 +118,25 @@ class Database:
             with self.engine.begin() as connection:
                 connection.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": 7_310_001})
                 Base.metadata.create_all(connection)
+                self._ensure_user_group_columns(connection)
         else:
-            Base.metadata.create_all(self.engine)
+            with self.engine.begin() as connection:
+                Base.metadata.create_all(connection)
+                self._ensure_user_group_columns(connection)
+
+    @staticmethod
+    def _ensure_user_group_columns(connection) -> None:
+        """Добавляет новые столбцы в существующие базы без сброса данных."""
+        tables = set(inspect(connection).get_table_names())
+        if "TUserGroups" not in tables:
+            return
+        columns = {column["name"] for column in inspect(connection).get_columns("TUserGroups")}
+        if "is_deleted" not in columns:
+            table_name = connection.dialect.identifier_preparer.quote("TUserGroups")
+            column_name = connection.dialect.identifier_preparer.quote("is_deleted")
+            connection.execute(
+                text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} BOOLEAN NOT NULL DEFAULT false")
+            )
 
 
 def create_database_app(settings: Settings) -> Flask:

@@ -74,6 +74,8 @@ class NotificationRepository(SqlRepository):
                 Notification.shown_at.is_(None),
                 Notification.fire_at <= now,
                 Solution.is_final.is_(False),
+                # Не выдаём старые отложенные напоминания за сутки после отключения этого типа.
+                Notification.kind != NotificationKind.REMIND_24H.value,
             )
             .order_by(Notification.fire_at, Notification.id)
         )

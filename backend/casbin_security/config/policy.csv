@@ -15,8 +15,8 @@ p, grpDel, groups, delete
 p, menuRefs, organizations, write
 p, menuSettings, users, read
 p, menuSettings, users, manage
+p, menuSettings, users, edit_profile
 p, menuSettings, user_groups, manage
 p, menuSettings, rights, assign
-p, usrEdit, users, edit_profile
 p, jrnDel, journal, delete
 g, active, authenticated

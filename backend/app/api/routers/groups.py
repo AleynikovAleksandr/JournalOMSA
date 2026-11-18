@@ -86,6 +86,58 @@ def create_group_with_records(
             "records": [JournalRecordOut.of(row) for row in records]}
 
 
+@router.post("/{group_id}/records", status_code=status.HTTP_201_CREATED)
+def add_records_to_group(
+    group_id: int,
+    request: Request,
+    principal: PrincipalDep,
+    container: ContainerDep,
+    uow: UowDep,
+    payload: Annotated[dict[str, Any], Body()],
+):
+    """Добавить несколько аттестуемых в существующую группу одной транзакцией."""
+    rows_payload = payload.get("records")
+    if not isinstance(rows_payload, list) or not rows_payload or len(rows_payload) > 100:
+        raise ValidationFailed("Добавьте от 1 до 100 аттестуемых")
+    if any(not isinstance(row, dict) for row in rows_payload):
+        raise ValidationFailed("Неверные данные аттестуемых")
+
+    container.access.require(principal, "groups", "create", "Недостаточно прав для добавления в группу")
+    group = container.group_service(uow, principal).get(group_id)
+    credentials = {"cookie": request.headers.get("cookie", ""), "csrf_token": request.headers.get("x-csrftoken", "")}
+    row_data = []
+    for index, row in enumerate(rows_payload, start=1):
+        try:
+            row_data.append(container.forms.validate(JournalRecordForm, row, **credentials))
+        except ValidationFailed as exc:
+            raise ValidationFailed(f"Строка {index}: {exc.message}", details=exc.details) from exc
+
+    service = container.journal_service(uow, principal)
+    records = []
+    for data in row_data:
+        record_input = JournalRecordInput(
+            check_date=group.check_date,
+            check_time=group.check_time,
+            type_check_id=group.type_check_id,
+            fio=data["fio"],
+            category_id=data.get("category_id"),
+            category_name=data.get("category_name"),
+            organization_id=data["organization_id"],
+            executor_id=data["executor_id"],
+            solution_id=data.get("solution_id"),
+            solution_name=data.get("solution_name"),
+            note=data.get("note"),
+            group_id=group.id,
+        )
+        records.append(service.create(record_input, commit=False))
+
+    uow.commit()
+    return {
+        "group": CheckGroupOut.of(group, len(uow.journal.in_group(group.id))),
+        "records": [JournalRecordOut.of(row) for row in records],
+    }
+
+
 @router.put("/{group_id}", response_model=CheckGroupOut)
 def update_group(group_id: int, principal: PrincipalDep, container: ContainerDep, uow: UowDep, data: GroupForm):
     group = container.group_service(uow, principal).update(group_id, _group_input(data))
