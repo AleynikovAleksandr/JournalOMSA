@@ -23,6 +23,8 @@ spec:
     - name: web
       port: 5600
       targetPort: web
+      nodePort: 31787
     - name: admin
       port: 5620
       targetPort: admin
+      nodePort: 31782
