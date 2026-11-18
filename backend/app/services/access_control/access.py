@@ -84,6 +84,10 @@ class JournalRules:
                 self._principal.has(JRN_STATUS_ONLY)
                 or self._principal.is_system_admin
                 or (self._principal.has(JRN_OWN_ONLY) and own)
+                or (
+                    self._principal.can_view_other_tasks
+                    and self._policy.allows(self._principal, "groups", "update")
+                )
             )
             and (
                 own

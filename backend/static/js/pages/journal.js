@@ -163,7 +163,10 @@
   const canChangeStatus = (row) => {
     const own = row.executorId === myId();
     return !isFired() &&
-      (!!state.RIGHTS.jrnStatusOnly || !!state.me?.is_system_admin || (!!state.RIGHTS.jrnOwnOnly && own)) &&
+      (!!state.RIGHTS.jrnStatusOnly ||
+        !!state.me?.is_system_admin ||
+        (!!state.RIGHTS.jrnOwnOnly && own) ||
+        (canViewOtherTasks() && !!state.RIGHTS.grpEdit)) &&
       (own || canViewOtherTasks());
   };
   const canDelete = (row) => !isFired() && !!state.RIGHTS.jrnDel && ownOnlyOk(row);
