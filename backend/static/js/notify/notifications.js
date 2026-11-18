@@ -1,7 +1,7 @@
 (function (global) {
   'use strict';
 
-  const POLL_INTERVAL_MS = 60 * 1000;
+  const POLL_INTERVAL_MS = 10 * 1000;
   const STORE_KEY = 'omsa_shown_notifications';
   const STORE_LIMIT = 500;
 
@@ -27,9 +27,10 @@
   }
 
   class RealtimeChannel {
-    constructor(api, onNotify) {
+    constructor(api, onNotify, onStateChange) {
       this.api = api;
       this.onNotify = onNotify;
+      this.onStateChange = onStateChange;
       this.ws = null;
       this.retryMs = 2000;
       this.stopped = false;
@@ -51,11 +52,16 @@
       ws.addEventListener('message', (event) => {
         let data = null;
         try { data = JSON.parse(event.data); } catch (e) { return; }
-        if (data.type === 'ready') this.retryMs = 2000;
+        if (data.type === 'ready') {
+          this.retryMs = 2000;
+          this.onStateChange(true);
+          this.onNotify();
+        }
         if (data.type === 'notifications') this.onNotify();
       });
       ws.addEventListener('close', (event) => {
         this.ws = null;
+        this.onStateChange(false);
         if (event.code === 4003) this.api.token = null;
         this.scheduleReconnect();
       });
@@ -73,8 +79,13 @@
     constructor(api) {
       this.api = api;
       this.shown = new ShownStore();
-      this.channel = new RealtimeChannel(api, () => this.poll());
+      this.channel = new RealtimeChannel(
+        api,
+        () => this.poll(),
+        (connected) => this.setPollingFallback(!connected),
+      );
       this.polling = false;
+      this.pollTimer = null;
       this.workerRegistration = null;
     }
 
@@ -88,9 +99,18 @@
         this.getWorker().then((registration) => registration.update()).catch(() => {});
       }
       this.subscribe();
+      this.setPollingFallback(true);
       await this.poll();
-      setInterval(() => this.poll(), POLL_INTERVAL_MS);
       this.channel.connect();
+    }
+
+    setPollingFallback(enabled) {
+      if (enabled && this.pollTimer === null) {
+        this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
+      } else if (!enabled && this.pollTimer !== null) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+      }
     }
 
     async subscribe() {

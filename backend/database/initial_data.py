@@ -12,7 +12,7 @@ from app.models.references import Category, Solution, TypeCheck
 from app.models.user import User, UserGroup
 from app.schemas.settings import Settings
 from app.services.access_control.principal import ADMIN_GROUP_NAME, SYSTEM_ADMIN_FIO
-from app.services.access_control.rights import FULL_RIGHTS, format_rules
+from app.services.access_control.rights import ADMIN_DEFAULT_RIGHTS, FULL_RIGHTS, format_rules
 from core.clock import SystemClock, truncate_to_ms
 from core.config import get_settings
 from core.logging import configure_logging
@@ -53,6 +53,9 @@ class InitialDataSeeder:
         self._add_missing(Solution, ({"name": name, "is_final": is_final} for name, is_final in SOLUTIONS))
         self._add_missing(UserGroup, ({"name": name, "is_archive": is_archive} for name, is_archive in user_groups))
         self.session.flush()
+        admin_group = self.session.scalar(select(UserGroup).where(UserGroup.name == ADMIN_GROUP_NAME))
+        if admin_group is not None and admin_group.rules is None:
+            admin_group.rules = format_rules(ADMIN_DEFAULT_RIGHTS)
 
     def ensure_admin(self, settings: Settings, hasher: Argon2PasswordHasher) -> bool:
         if not settings.admin_login or not settings.admin_password:

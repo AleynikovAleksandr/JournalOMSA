@@ -49,8 +49,8 @@ celery_app.conf.update(
         },
         "send-due-web-push": {
             "task": "notifications.send_due_push",
-            "schedule": 60.0,
-            "options": {"expires": 55},
+            "schedule": 10.0,
+            "options": {"expires": 9},
         },
         "cleanup-refresh-tokens": {
             "task": "maintenance.cleanup_refresh_tokens",

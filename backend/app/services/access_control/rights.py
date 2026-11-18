@@ -139,6 +139,8 @@ GRANT_KEYS: frozenset[str] = frozenset(RIGHT_KEYS) - RESTRICTIVE_KEYS
 DEFAULT_RIGHTS: frozenset[str] = frozenset({JRN_OWN_ONLY, JRN_STATUS_ONLY})
 # «Полные права»: все разрешающие права без ограничений
 FULL_RIGHTS: frozenset[str] = GRANT_KEYS
+# Группе «Администраторы» по умолчанию не назначается право изменения статуса.
+ADMIN_DEFAULT_RIGHTS: frozenset[str] = FULL_RIGHTS - {JRN_STATUS_ONLY}
 
 # Маркер в TUsers.rules отличает личные права от копии прав группы без изменения схемы БД.
 USER_RIGHTS_OVERRIDE = "!"
